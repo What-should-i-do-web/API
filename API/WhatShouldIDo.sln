@@ -1,0 +1,61 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{555756DC-C28A-4427-B267-2434BC10254F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WhatShouldIDo.Domain", "src\WhatShouldIDo.Domain\WhatShouldIDo.Domain.csproj", "{2041C016-C1E7-4317-9EC2-E29AFBADB833}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WhatShouldIDo.Application", "src\WhatShouldIDo.Application\WhatShouldIDo.Application.csproj", "{CEAAD6DB-5645-4A84-89CF-CF5002817954}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WhatShouldIDo.Infrastructure", "src\WhatShouldIDo.Infrastructure\WhatShouldIDo.Infrastructure.csproj", "{D0F30526-E5AC-4BE8-B46F-B0475490456C}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WhatShouldIDo.API", "src\WhatShouldIDo.API\WhatShouldIDo.API.csproj", "{648DB3F0-4E60-4D6B-A339-72F71F3BECAF}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WhatShouldIDo.API.IntegrationTests", "src\WhatShouldIDo.Tests\WhatShouldIDo.API.IntegrationTests.csproj", "{A270E20D-D808-4667-93E3-160937920285}"
+EndProject
+Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-compose.dcproj", "{38006514-AC6E-4640-A93F-F2E930E98ADF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{2041C016-C1E7-4317-9EC2-E29AFBADB833}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2041C016-C1E7-4317-9EC2-E29AFBADB833}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2041C016-C1E7-4317-9EC2-E29AFBADB833}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2041C016-C1E7-4317-9EC2-E29AFBADB833}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CEAAD6DB-5645-4A84-89CF-CF5002817954}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CEAAD6DB-5645-4A84-89CF-CF5002817954}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CEAAD6DB-5645-4A84-89CF-CF5002817954}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CEAAD6DB-5645-4A84-89CF-CF5002817954}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D0F30526-E5AC-4BE8-B46F-B0475490456C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D0F30526-E5AC-4BE8-B46F-B0475490456C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D0F30526-E5AC-4BE8-B46F-B0475490456C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D0F30526-E5AC-4BE8-B46F-B0475490456C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{648DB3F0-4E60-4D6B-A339-72F71F3BECAF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{648DB3F0-4E60-4D6B-A339-72F71F3BECAF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{648DB3F0-4E60-4D6B-A339-72F71F3BECAF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{648DB3F0-4E60-4D6B-A339-72F71F3BECAF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A270E20D-D808-4667-93E3-160937920285}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A270E20D-D808-4667-93E3-160937920285}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A270E20D-D808-4667-93E3-160937920285}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A270E20D-D808-4667-93E3-160937920285}.Release|Any CPU.Build.0 = Release|Any CPU
+		{38006514-AC6E-4640-A93F-F2E930E98ADF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{38006514-AC6E-4640-A93F-F2E930E98ADF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{38006514-AC6E-4640-A93F-F2E930E98ADF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{38006514-AC6E-4640-A93F-F2E930E98ADF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{2041C016-C1E7-4317-9EC2-E29AFBADB833} = {555756DC-C28A-4427-B267-2434BC10254F}
+		{CEAAD6DB-5645-4A84-89CF-CF5002817954} = {555756DC-C28A-4427-B267-2434BC10254F}
+		{D0F30526-E5AC-4BE8-B46F-B0475490456C} = {555756DC-C28A-4427-B267-2434BC10254F}
+		{648DB3F0-4E60-4D6B-A339-72F71F3BECAF} = {555756DC-C28A-4427-B267-2434BC10254F}
+		{A270E20D-D808-4667-93E3-160937920285} = {555756DC-C28A-4427-B267-2434BC10254F}
+	EndGlobalSection
+EndGlobal
