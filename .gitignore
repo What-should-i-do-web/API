@@ -1,0 +1,23 @@
+# Build outputs
+**/bin/
+**/obj/
+
+# Rider, VS, VSCode
+.vs/
+.idea/
+.vscode/
+
+# User settings
+*.suo
+*.user
+*.userosscache
+
+# Logs
+*.log
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# Docker overrides
+docker-compose.override.yml
