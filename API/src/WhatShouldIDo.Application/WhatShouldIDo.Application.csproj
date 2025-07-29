@@ -4,11 +4,6 @@
     <ProjectReference Include="..\WhatShouldIDo.Domain\WhatShouldIDo.Domain.csproj" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Folder Include="UseCases\Commands\" />
-    <Folder Include="UseCases\Queries\" />
-  </ItemGroup>
-
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

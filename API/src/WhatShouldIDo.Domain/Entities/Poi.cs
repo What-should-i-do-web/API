@@ -26,5 +26,12 @@ namespace WhatShouldIDo.Domain.Entities
         {
             Description = description;
         }
+        public void UpdateName(string newName)
+        {
+            if (string.IsNullOrWhiteSpace(newName))
+                throw new DomainException("POI name is required.");
+            Name = newName.Trim();
+        }
+
     }
 }

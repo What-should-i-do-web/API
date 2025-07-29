@@ -13,6 +13,9 @@ namespace WhatShouldIDo.Infrastructure.Data
         public DbSet<Route> Routes { get; set; }
         public DbSet<Poi> Pois { get; set; }
         public DbSet<RoutePoint> RoutePoints { get; set; }
+        public DbSet<Suggestion> Suggestions { get; set; }
+        public DbSet<Place> Places { get; set; }
+
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

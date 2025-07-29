@@ -28,7 +28,7 @@ namespace WhatShouldIDo.API.Middleware
                 _logger.LogWarning(dex, "Domain error occurred");
                 context.Response.StatusCode = (int)HttpStatusCode.BadRequest;
                 context.Response.ContentType = "application/json";
-                var error = new ErrorResponse(dex.Message);
+                var error = new ErrorResponse("Domain Exception \n",dex.Message);
                 await context.Response.WriteAsJsonAsync(error);
             }
             catch (Exception ex)
@@ -36,7 +36,7 @@ namespace WhatShouldIDo.API.Middleware
                 _logger.LogError(ex, "Unhandled exception");
                 context.Response.StatusCode = (int)HttpStatusCode.InternalServerError;
                 context.Response.ContentType = "application/json";
-                var error = new ErrorResponse("An unexpected error occurred.");
+                var error = new ErrorResponse("An unexpected error occurred.\n",ex.ToString());
                 await context.Response.WriteAsJsonAsync(error);
             }
         }

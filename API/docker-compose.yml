@@ -20,6 +20,11 @@ services:
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=WhatShouldIDo;User Id=sa;Password=1471027Demo;TrustServerCertificate=True;Encrypt=False"
     depends_on:
       - sqlserver
+      - redis 
+  redis:
+    image: redis
+    ports:
+      - "6379:6379"
 
 volumes:
   sqlserverdata:

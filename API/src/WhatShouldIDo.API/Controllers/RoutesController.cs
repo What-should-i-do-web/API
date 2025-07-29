@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Http;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using WhatShouldIDo.Application.DTOs.Requests;
 using WhatShouldIDo.Application.DTOs.Response;

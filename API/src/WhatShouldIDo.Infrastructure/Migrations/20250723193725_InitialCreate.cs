@@ -44,10 +44,10 @@ namespace WhatShouldIDo.Infrastructure.Migrations
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    RouteId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
                     Latitude = table.Column<double>(type: "float", nullable: false),
                     Longitude = table.Column<double>(type: "float", nullable: false),
-                    Order = table.Column<int>(type: "int", nullable: false),
-                    RouteId = table.Column<Guid>(type: "uniqueidentifier", nullable: true)
+                    Order = table.Column<int>(type: "int", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -56,7 +56,8 @@ namespace WhatShouldIDo.Infrastructure.Migrations
                         name: "FK_RoutePoints_Routes_RouteId",
                         column: x => x.RouteId,
                         principalTable: "Routes",
-                        principalColumn: "Id");
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateIndex(

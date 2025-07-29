@@ -12,8 +12,8 @@ using WhatShouldIDo.Infrastructure.Data;
 namespace WhatShouldIDo.Infrastructure.Migrations
 {
     [DbContext(typeof(WhatShouldIDoDbContext))]
-    [Migration("20250709000138_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20250724224643_PlacesEntity")]
+    partial class PlacesEntity
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -70,7 +70,7 @@ namespace WhatShouldIDo.Infrastructure.Migrations
                     b.Property<int>("Order")
                         .HasColumnType("int");
 
-                    b.Property<Guid?>("RouteId")
+                    b.Property<Guid>("RouteId")
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
@@ -111,7 +111,9 @@ namespace WhatShouldIDo.Infrastructure.Migrations
                 {
                     b.HasOne("WhatShouldIDo.Domain.Entities.Route", null)
                         .WithMany("Points")
-                        .HasForeignKey("RouteId");
+                        .HasForeignKey("RouteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
 
                     b.OwnsOne("WhatShouldIDo.Domain.ValueObjects.Coordinates", "Location", b1 =>
                         {

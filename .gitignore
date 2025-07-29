@@ -11,6 +11,8 @@
 *.suo
 *.user
 *.userosscache
+**/appsettings.*.json
+!appsettings.Development.json
 
 # Logs
 *.log
