@@ -1,0 +1,575 @@
+================================================================================================
+WHATSHOULDIDO - CLEAN ARCHITECTURE PROJECT - DETAILED USAGE SCENARIOS
+================================================================================================
+
+PROJECT OVERVIEW:
+----------------
+WhatShouldIDo is a location-based recommendation system built with .NET 9 using Clean Architecture principles.
+The system helps users discover places and activities based on their location, preferences, and natural language prompts.
+
+ARCHITECTURE LAYERS:
+-------------------
+1. Domain Layer (WhatShouldIDo.Domain): Core business entities and value objects
+2. Application Layer (WhatShouldIDo.Application): Use cases, DTOs, and interfaces
+3. Infrastructure Layer (WhatShouldIDo.Infrastructure): External service implementations
+4. API Layer (WhatShouldIDo.API): Controllers, middleware, and HTTP endpoints
+
+MAIN COMPONENTS & ENTITIES:
+--------------------------
+- POI (Point of Interest): Individual locations with coordinates and descriptions
+- Route: Collections of route points forming a path
+- RoutePoint: Individual points within a route with order
+- Place: External places from Google Places API with caching
+- Suggestion: AI-generated recommendations for users
+
+================================================================================================
+DETAILED CONTROLLER USAGE SCENARIOS
+================================================================================================
+
+1. POIS CONTROLLER (api/pois)
+============================
+
+Purpose: Manages Points of Interest (POI) - individual locations that users can create, view, and manage.
+
+SCENARIO 1.1: Creating a New POI
+--------------------------------
+Endpoint: POST /api/pois
+Use Case: User wants to mark a favorite restaurant as a POI
+
+Request Body:
+{
+  "name": "Galata Meze Restaurant",
+  "latitude": 41.0265,
+  "longitude": 28.9738,
+  "description": "Great seafood restaurant with Bosphorus view"
+}
+
+Process Flow:
+1. CreatePoiRequestValidator validates the input
+2. PoiService.CreateAsync() is called
+3. Domain validation ensures name is not empty and coordinates are valid
+4. New Poi entity is created with generated GUID
+5. Repository saves to database
+6. Returns PoiDto with 201 Created status
+
+SCENARIO 1.2: Retrieving All POIs
+---------------------------------
+Endpoint: GET /api/pois
+Use Case: User wants to see all their saved POIs
+
+Process Flow:
+1. PoiService.GetAllAsync() retrieves all POIs
+2. Converts entities to DTOs
+3. Returns list of PoiDto objects
+
+SCENARIO 1.3: Getting Specific POI
+----------------------------------
+Endpoint: GET /api/pois/{id}
+Use Case: User wants details of a specific POI
+
+Process Flow:
+1. PoiService.GetByIdAsync(guid) searches for POI
+2. Returns 404 if not found, otherwise returns PoiDto
+
+SCENARIO 1.4: Updating POI Information
+--------------------------------------
+Endpoint: PUT /api/pois/{id}
+Use Case: User wants to update POI description or name
+
+Request Body:
+{
+  "name": "Galata Meze Restaurant - Updated",
+  "description": "Excellent seafood restaurant with amazing Bosphorus view"
+}
+
+Process Flow:
+1. UpdatePoiRequestValidator validates input
+2. PoiService.UpdateAsync() finds existing POI
+3. Domain methods UpdateName() and UpdateDescription() are called
+4. Repository saves changes
+5. Returns updated PoiDto
+
+SCENARIO 1.5: Deleting a POI
+----------------------------
+Endpoint: DELETE /api/pois/{id}
+Use Case: User no longer wants to keep a POI
+
+Process Flow:
+1. PoiService.DeleteAsync(id) removes POI
+2. Returns 204 No Content on success
+
+================================================================================================
+
+2. ROUTES CONTROLLER (api/routes)
+=================================
+
+Purpose: Manages travel routes consisting of multiple route points in sequence.
+
+SCENARIO 2.1: Creating a New Route
+----------------------------------
+Endpoint: POST /api/routes
+Use Case: User wants to create a walking tour route in Istanbul
+
+Request Body:
+{
+  "name": "Historic Istanbul Walking Tour"
+}
+
+Process Flow:
+1. CreateRouteRequestValidator validates the name
+2. RouteService.CreateAsync() creates new Route entity
+3. Domain validation ensures name is not empty
+4. Route is saved with creation timestamp
+5. Returns RouteDto with generated ID
+
+SCENARIO 2.2: Getting All Routes
+--------------------------------
+Endpoint: GET /api/routes
+Use Case: User wants to see all available routes
+
+Process Flow:
+1. RouteService.GetAllAsync() retrieves all routes
+2. Converts to DTOs including route points
+3. Returns list of RouteDto objects
+
+SCENARIO 2.3: Getting Specific Route with Points
+-----------------------------------------------
+Endpoint: GET /api/routes/{id}
+Use Case: User wants to see a specific route with all its points
+
+Process Flow:
+1. RouteService searches for route by ID
+2. Loads associated route points in order
+3. Returns RouteDto with embedded RoutePointDto collection
+4. Returns 404 if route not found
+
+SCENARIO 2.4: Updating Route Information
+---------------------------------------
+Endpoint: PUT /api/routes/{id}
+Use Case: User wants to rename a route
+
+Request Body:
+{
+  "name": "Complete Historic Istanbul Tour - Updated"
+}
+
+Process Flow:
+1. UpdateRouteRequestValidator validates input
+2. RouteService.UpdateAsync() finds existing route
+3. Domain method UpdateName() is called
+4. Repository saves changes
+5. Returns updated RouteDto
+
+================================================================================================
+
+3. ROUTE POINTS CONTROLLER (api/routepoints)
+============================================
+
+Purpose: Manages individual points within routes, maintaining order and sequence.
+
+SCENARIO 3.1: Adding Point to Route
+-----------------------------------
+Endpoint: POST /api/routepoints
+Use Case: User adds Hagia Sophia as first point in their Istanbul tour
+
+Request Body:
+{
+  "routeId": "12345678-1234-1234-1234-123456789012",
+  "latitude": 41.0086,
+  "longitude": 28.9802,
+  "order": 0
+}
+
+Process Flow:
+1. CreateRoutePointRequestValidator validates input
+2. RoutePointService.CreateAsync() creates RoutePoint entity
+3. Domain validation ensures valid coordinates and non-negative order
+4. RoutePoint is saved with generated ID
+5. Returns RoutePointDto with 201 Created
+
+SCENARIO 3.2: Getting Points for Route
+--------------------------------------
+Endpoint: GET /api/routepoints?routeId={guid}
+Use Case: User wants to see all points in a specific route ordered
+
+Process Flow:
+1. RoutePointService.GetByRouteAsync(routeId) queries points
+2. Points are returned ordered by Order property
+3. Returns list of RoutePointDto objects
+
+SCENARIO 3.3: Updating Point Order
+----------------------------------
+Endpoint: PUT /api/routepoints/{id}
+Use Case: User wants to reorder route points
+
+Request Body:
+{
+  "order": 2
+}
+
+Process Flow:
+1. UpdateRoutePointRequestValidator validates input
+2. RoutePointService.UpdateAsync() finds existing point
+3. Domain method UpdateOrder() is called
+4. Repository saves changes
+5. Returns updated RoutePointDto
+
+================================================================================================
+
+4. DISCOVER CONTROLLER (api/discover)
+=====================================
+
+Purpose: Main recommendation engine providing location-based suggestions using Google Places API.
+
+SCENARIO 4.1: Getting Nearby Suggestions
+----------------------------------------
+Endpoint: GET /api/discover?lat=41.0082&lng=28.9784&radius=2000
+Use Case: User is in Sultanahmet and wants nearby restaurant recommendations
+
+Process Flow:
+1. SuggestionService.GetNearbySuggestionsAsync() is called
+2. GooglePlacesProvider.GetNearbyPlacesAsync() queries Google Places API
+3. Results are cached in Redis for 30 minutes using CacheKeyBuilder
+4. Places are converted to SuggestionDto objects
+5. Returns list with place names, ratings, and reasons for suggestion
+
+SCENARIO 4.2: Getting Random Suggestion
+---------------------------------------
+Endpoint: GET /api/discover/random?lat=41.0082&lng=28.9784&radius=3000
+Use Case: User wants a random surprise recommendation nearby
+
+Process Flow:
+1. SuggestionService.GetRandomSuggestionAsync() is called
+2. GooglePlacesProvider gets nearby places
+3. Random selection algorithm picks one place
+4. Returns single SuggestionDto or 404 if no places found
+5. Includes reason "Konumdan rastgele seçildi"
+
+SCENARIO 4.3: Natural Language Prompt Search
+--------------------------------------------
+Endpoint: POST /api/discover/prompt
+Use Case: User types "Find me a good Turkish restaurant in Kadıköy"
+
+Request Body:
+{
+  "prompt": "Find me a good Turkish restaurant in Kadıköy",
+  "latitude": 40.9927,
+  "longitude": 29.0261,
+  "radius": 2000
+}
+
+Process Flow:
+1. SuggestionService.GetPromptSuggestionsAsync() processes request
+2. BasicPromptInterpreter.InterpretAsync() analyzes the prompt:
+   - Extracts location "Kadıköy" 
+   - Identifies cuisine type "Turkish restaurant"
+   - Detects price preferences if mentioned
+3. If location mentioned, GoogleGeocodingService gets coordinates
+4. GooglePlacesProvider.SearchByPromptAsync() queries Google with interpreted terms
+5. Results are cached for 15 minutes
+6. Places are ranked by:
+   - Sponsored status (if any)
+   - Rating/score
+   - Distance from user
+7. Returns prioritized list of SuggestionDto objects
+
+================================================================================================
+
+5. ADMIN CONTROLLER (api/admin)
+===============================
+
+Purpose: Administrative functions for managing place sponsorships and business features.
+
+SCENARIO 5.1: Updating Place Sponsorship
+----------------------------------------
+Endpoint: PUT /api/admin/place/sponsor
+Use Case: Restaurant owner pays for sponsored placement in search results
+
+Request Body:
+{
+  "placeId": "12345678-1234-1234-1234-123456789012",
+  "isSponsored": true,
+  "sponsoredUntil": "2024-12-31T23:59:59Z"
+}
+
+Process Flow:
+1. PlaceService.UpdateSponsorshipAsync() is called
+2. Finds place in database
+3. Updates IsSponsored and SponsoredUntil fields
+4. SponsorshipHistory record is created for audit trail
+5. Returns success message or 404 if place not found
+
+Business Impact:
+- Sponsored places appear first in search results
+- Sponsorship has expiration date for automatic cleanup
+- Admin can track sponsorship history for billing
+
+================================================================================================
+
+6. AUTH CONTROLLER (api/auth)
+============================
+
+Purpose: Handles authentication using JWT tokens.
+
+SCENARIO 6.1: User Login
+------------------------
+Endpoint: POST /api/auth/login
+Use Case: Admin user needs to authenticate for management features
+
+Request Body:
+{
+  "username": "admin",
+  "password": "password"
+}
+
+Process Flow:
+1. Simple credential validation (hardcoded for demo)
+2. JWT token generation with:
+   - User subject claim
+   - Unique JTI (JWT ID)
+   - Configurable expiration time
+3. Returns JWT token for subsequent API calls
+
+Security Features:
+- HMAC-SHA256 signature
+- Configurable issuer/audience validation
+- Token expiration handling
+- Bearer token authentication middleware
+
+================================================================================================
+
+7. HEALTH CONTROLLER (api/health)
+=================================
+
+Purpose: System health monitoring and external service checks.
+
+SCENARIO 7.1: Redis Health Check
+--------------------------------
+Endpoint: GET /api/health/redis
+Use Case: Operations team monitors Redis connectivity
+
+Process Flow:
+1. RedisHealthChecker.TestAsync() attempts Redis connection
+2. Tests basic Redis operations
+3. Returns 200 OK if Redis is accessible
+4. Returns 500 Internal Server Error if Redis is down
+
+Monitoring Use Cases:
+- Kubernetes liveness/readiness probes
+- Application monitoring dashboards
+- Automated alerting systems
+
+================================================================================================
+
+EXTERNAL SERVICE INTEGRATIONS
+================================================================================================
+
+1. GOOGLE PLACES API INTEGRATION
+================================
+The system heavily integrates with Google Places API for location data:
+
+Components:
+- GooglePlacesProvider: Main service for Google API calls
+- GoogleGeocodingService: Converts addresses to coordinates
+- BasicPromptInterpreter: Processes natural language queries
+
+API Endpoints Used:
+- Nearby Search: For location-based recommendations
+- Text Search: For prompt-based searches
+- Geocoding: For address to coordinate conversion
+
+Caching Strategy:
+- Redis caching with configurable TTL
+- Nearby searches cached for 30 minutes
+- Prompt searches cached for 15 minutes
+- Cache keys built using CacheKeyBuilder utility
+
+2. REDIS CACHING SYSTEM
+=======================
+Purpose: Reduces API calls to Google and improves response times
+
+Implementation:
+- RedisCacheService implements ICacheService
+- Distributed caching with StackExchange.Redis
+- Configurable TTL per cache type
+- Health checking for Redis connectivity
+
+Cache Key Patterns:
+- nearby:{lat}:{lng}:{radius}:{keyword}
+- prompt:{textQuery}:{lat}:{lng}
+- Structured key building prevents cache collisions
+
+================================================================================================
+
+DATA FLOW PATTERNS
+================================================================================================
+
+1. TYPICAL USER DISCOVERY FLOW
+==============================
+1. User opens app and shares location (lat/lng)
+2. App calls GET /api/discover?lat=X&lng=Y&radius=3000
+3. System checks Redis cache first
+4. If cache miss, calls Google Places API
+5. Results cached and returned to user
+6. User sees list of nearby suggestions with ratings
+
+2. NATURAL LANGUAGE SEARCH FLOW
+===============================
+1. User types "I want good coffee near Taksim"
+2. App calls POST /api/discover/prompt with text
+3. BasicPromptInterpreter processes text:
+   - Extracts "coffee" as search term
+   - Identifies "Taksim" as location
+   - No price preferences detected
+4. GoogleGeocodingService gets Taksim coordinates
+5. GooglePlacesProvider searches for coffee shops near Taksim
+6. Results ranked by rating and distance
+7. Cached and returned to user
+
+3. ROUTE PLANNING FLOW
+======================
+1. User creates new route with name
+2. User adds first point (starting location)
+3. User adds subsequent points in order
+4. System maintains order sequence in database
+5. User can reorder points by updating order values
+6. Route can be shared or saved for later use
+
+================================================================================================
+
+ERROR HANDLING & VALIDATION
+================================================================================================
+
+1. DOMAIN VALIDATION
+====================
+- Coordinates must be within valid ranges (-90 to 90 for lat, -180 to 180 for lng)
+- POI and Route names cannot be empty or whitespace
+- Route point orders must be non-negative
+- All entities have domain validation in constructors
+
+2. API VALIDATION
+=================
+- FluentValidation used for request validation
+- Automatic validation occurs before controller actions
+- Validation errors return 400 Bad Request with details
+
+3. GLOBAL EXCEPTION HANDLING
+============================
+- GlobalExceptionMiddleware catches all unhandled exceptions
+- Returns consistent error response format
+- Logs exceptions for monitoring
+- Prevents sensitive information leakage
+
+================================================================================================
+
+PERFORMANCE OPTIMIZATIONS
+================================================================================================
+
+1. CACHING STRATEGY
+==================
+- Redis distributed cache for Google API responses
+- Configurable TTL per cache type
+- Cache key collision prevention
+- Async cache operations
+
+2. DATABASE OPTIMIZATIONS
+=========================
+- Entity Framework Core with SQL Server
+- Generic repository pattern for common operations
+- Async operations throughout the stack
+- Proper indexing on frequently queried fields
+
+3. API OPTIMIZATIONS
+===================
+- Async/await pattern used consistently
+- DTO mapping to prevent over-fetching
+- HTTP client reuse for external API calls
+- Response compression in production
+
+================================================================================================
+
+SECURITY CONSIDERATIONS
+================================================================================================
+
+1. AUTHENTICATION & AUTHORIZATION
+=================================
+- JWT token-based authentication
+- Configurable token expiration
+- Bearer token validation middleware
+- Secure token signing with HMAC-SHA256
+
+2. API SECURITY
+===============
+- Input validation on all endpoints
+- SQL injection prevention through EF Core
+- XSS protection through proper output encoding
+- CORS configuration for cross-origin requests
+
+3. EXTERNAL API SECURITY
+=======================
+- API keys stored in configuration (not hardcoded)
+- Rate limiting considerations for Google APIs
+- Error handling to prevent information disclosure
+- Secure HTTP client configuration
+
+================================================================================================
+
+DEPLOYMENT & CONFIGURATION
+================================================================================================
+
+1. CONFIGURATION MANAGEMENT
+===========================
+Required Configuration:
+- ConnectionStrings:DefaultConnection (SQL Server)
+- Redis:ConnectionString
+- GooglePlaces:ApiKey
+- GooglePlaces:NearbyPlacesUrl
+- GooglePlaces:PlacesTextUrl
+- JwtSettings:Key, Issuer, Audience, DurationInMinutes
+- CacheOptions:NearbyTtlMinutes, PromptTtlMinutes
+
+2. DOCKER SUPPORT
+=================
+- Dockerfile included for containerization
+- Docker Compose for multi-container setup
+- Environment variable support
+- Health check endpoints for container orchestration
+
+3. DATABASE MIGRATIONS
+======================
+- Entity Framework Core migrations
+- Automatic migration support in development
+- Production migration scripts available
+- Database schema versioning
+
+================================================================================================
+
+FUTURE ENHANCEMENT SCENARIOS
+================================================================================================
+
+1. USER PERSONALIZATION
+=======================
+- User profiles with preferences
+- History-based recommendations
+- Favorite places and routes
+- Social sharing features
+
+2. ADVANCED AI INTEGRATION
+==========================
+- Machine learning for better prompt interpretation
+- Sentiment analysis of reviews
+- Predictive recommendations
+- Real-time popularity scoring
+
+3. BUSINESS FEATURES
+===================
+- Revenue sharing with sponsored places
+- Analytics dashboard for business insights
+- A/B testing for recommendation algorithms
+- Integration with reservation systems
+
+================================================================================================
+
+This comprehensive usage scenario document provides detailed understanding of how each component
+in the WhatShouldIDo system works, from basic CRUD operations to complex AI-powered recommendations.
+The clean architecture ensures maintainability and scalability for future enhancements.

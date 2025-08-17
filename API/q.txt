@@ -1,0 +1,20 @@
+Card fields: I’ll use your schema (id, placeName, latitude, longitude, category, source, reason, score, createdAt, userHash, isSponsored, sponsoredUntil). OK to show badges for Sponsored, and small chips for reason (e.g., “Yakın konumdan önerildi”) and source?
+Prompt search: POST /api/discover/prompt with body:
+
+{ "prompt": "I want a drink coffee", "latitude": <num>, "longitude": <num>, "radius": <num> }
+
+
+Returns an array of the SuggestionDto you shared (same shape as your example). Correct?
+5) Nearby: GET /api/discover?lat={}&lng={}&radius={} for default “What’s near me?” on first load—still desired?
+6) Random: GET /api/discover/random?lat={}&lng={}&radius={} — include a “Surprise me” button?
+7) Auth: Login/Signup routes calling your JWT endpoints (/api/auth/login etc.). Any signup endpoint or only login for now? Token in Authorization: Bearer? Token expiry?
+8) History: Where do I fetch a signed-in user’s last results? (If not implemented yet, I’ll store recent prompts client-side for demo and gate a /history page until your real endpoint exists.)
+9) Sponsored ordering: Should sponsored items be visually pinned to top or just badged while your backend already sorts them?
+
+On first visit: Prompt for geolocation immediately. If denied, show Places Autocomplete input (acts like text-select). OK to use Google Places Autocomplete for manual location?
+
+Default radius: What default (e.g., 2000 meters)? Should it be user-adjustable?
+
+Precision: Use browser GPS for signed-in and guests alike if granted—OK?
+
+Answer these questions based on project

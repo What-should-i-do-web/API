@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Azure.Core;
+using Microsoft.AspNetCore.Mvc;
 using WhatShouldIDo.Application.DTOs.Requests;
 using WhatShouldIDo.Application.Interfaces;
 
@@ -24,6 +25,7 @@ namespace WhatShouldIDo.API.Controllers
 
             return Ok(new { message = "Sponsorship updated successfully." });
         }
+        
     }
 
 }
