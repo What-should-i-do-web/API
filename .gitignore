@@ -23,3 +23,4 @@ Thumbs.db
 
 # Docker overrides
 docker-compose.override.yml
+/API/nul
