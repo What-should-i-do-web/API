@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  
+  <!-- Categories -->
+  <data name="category.restaurant">
+    <value>Restoran</value>
+  </data>
+  <data name="category.cafe">
+    <value>Kafe</value>
+  </data>
+  <data name="category.museum">
+    <value>Müze</value>
+  </data>
+  <data name="category.park">
+    <value>Park</value>
+  </data>
+  <data name="category.shopping">
+    <value>Alışveriş</value>
+  </data>
+  <data name="category.entertainment">
+    <value>Eğlence</value>
+  </data>
+  <data name="category.tourist_attraction">
+    <value>Turistik Yer</value>
+  </data>
+  
+  <!-- Reasons -->
+  <data name="reason.highly_rated">
+    <value>Yüksek puanlı</value>
+  </data>
+  <data name="reason.popular">
+    <value>Popüler</value>
+  </data>
+  <data name="reason.nearby">
+    <value>Yakın</value>
+  </data>
+  <data name="reason.trending">
+    <value>Trend</value>
+  </data>
+  <data name="reason.recommended">
+    <value>Önerilen</value>
+  </data>
+  <data name="reason.matches_preferences">
+    <value>Tercihlerinize uygun</value>
+  </data>
+  <data name="reason.good_weather">
+    <value>Bu aktivite için güzel hava</value>
+  </data>
+  <data name="reason.seasonal">
+    <value>Bu mevsim için mükemmel</value>
+  </data>
+  
+  <!-- Time contexts -->
+  <data name="time.morning">
+    <value>Sabah</value>
+  </data>
+  <data name="time.afternoon">
+    <value>Öğleden sonra</value>
+  </data>
+  <data name="time.evening">
+    <value>Akşam</value>
+  </data>
+  <data name="time.night">
+    <value>Gece</value>
+  </data>
+  
+  <!-- Weather contexts -->
+  <data name="weather.sunny">
+    <value>Güneşli</value>
+  </data>
+  <data name="weather.rainy">
+    <value>Yağmurlu</value>
+  </data>
+  <data name="weather.cloudy">
+    <value>Bulutlu</value>
+  </data>
+  <data name="weather.snowy">
+    <value>Karlı</value>
+  </data>
+</root>

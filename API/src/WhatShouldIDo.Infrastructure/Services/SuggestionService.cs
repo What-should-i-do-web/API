@@ -31,6 +31,10 @@ namespace WhatShouldIDo.Infrastructure.Services
                 PlaceName = place.Name,
                 Reason = "Yakın konumdan önerildi",
                 Score = place.Rating != null && double.TryParse(place.Rating, out var rating) ? rating : 0,
+                Latitude = place.Latitude,
+                Longitude = place.Longitude,
+                PhotoReference = place.PhotoReference,
+                PhotoUrl = place.PhotoUrl,
                 CreatedAt = DateTime.UtcNow
             }).ToList();
 
@@ -52,6 +56,10 @@ namespace WhatShouldIDo.Infrastructure.Services
                 PlaceName = selected.Name,
                 Reason = "Konumdan rastgele seçildi",
                 Score = selected.Rating != null && double.TryParse(selected.Rating, out var rating) ? rating : 0,
+                Latitude = selected.Latitude,
+                Longitude = selected.Longitude,
+                PhotoReference = selected.PhotoReference,
+                PhotoUrl = selected.PhotoUrl,
                 CreatedAt = DateTime.UtcNow
             };
         }
@@ -87,6 +95,8 @@ namespace WhatShouldIDo.Infrastructure.Services
                 SponsoredUntil = place.SponsoredUntil,
                 Latitude = place.Latitude,
                 Longitude = place.Longitude,
+                PhotoReference = place.PhotoReference,
+                PhotoUrl = place.PhotoUrl,
                 CreatedAt = DateTime.UtcNow
             }).ToList();
 

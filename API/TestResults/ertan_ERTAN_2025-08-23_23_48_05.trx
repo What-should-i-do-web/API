@@ -1,0 +1,30 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<TestRun id="ed96910e-d3bd-4e54-8930-81b8055cac83" name="ertan@ERTAN 2025-08-23 23:48:05" runUser="ERTAN\ertan" xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">
+  <Times creation="2025-08-23T23:48:05.7917413+03:00" queuing="2025-08-23T23:48:05.7917420+03:00" start="2025-08-23T23:48:05.5738078+03:00" finish="2025-08-23T23:48:05.7920978+03:00" />
+  <TestSettings name="default" id="c0c958b3-2f97-4039-b987-68ac12d3288a">
+    <Deployment runDeploymentRoot="ertan_ERTAN_2025-08-23_23_48_05" />
+  </TestSettings>
+  <TestLists>
+    <TestList name="Results Not in a List" id="8c84fa94-04c1-424b-9868-57a2d4851a1d" />
+    <TestList name="All Loaded Results" id="19431567-8539-422a-85d7-44ee4e166bda" />
+  </TestLists>
+  <ResultSummary outcome="Failed">
+    <Counters total="0" executed="0" passed="0" failed="0" error="0" timeout="0" aborted="0" inconclusive="0" passedButRunAborted="0" notRunnable="0" notExecuted="0" disconnected="0" warning="0" completed="0" inProgress="0" pending="0" />
+    <Output>
+      <StdOut>Error:&#xD;
+  An assembly specified in the application dependencies manifest (testhost.deps.json) was not found:&#xD;
+    package: 'Newtonsoft.Json', version: '13.0.1'&#xD;
+    path: 'lib/netstandard2.0/Newtonsoft.Json.dll'&#xD;
+</StdOut>
+    </Output>
+    <RunInfos>
+      <RunInfo computerName="ERTAN" outcome="Error" timestamp="2025-08-23T23:48:05.7600628+03:00">
+        <Text>Testhost process for source(s) 'C:\Users\ertan\Desktop\LAB\githubProjects\WhatShouldIDo\NeYapsamWeb\API\src\WhatShouldIDo.Tests\bin\Debug\net9.0\WhatShouldIDo.API.IntegrationTests.dll' exited with error: Error:&#xD;
+  An assembly specified in the application dependencies manifest (testhost.deps.json) was not found:&#xD;
+    package: 'Newtonsoft.Json', version: '13.0.1'&#xD;
+    path: 'lib/netstandard2.0/Newtonsoft.Json.dll'&#xD;
+. Please check the diagnostic logs for more information.</Text>
+      </RunInfo>
+    </RunInfos>
+  </ResultSummary>
+</TestRun>

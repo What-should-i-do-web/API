@@ -20,5 +20,7 @@ namespace WhatShouldIDo.Domain.Entities
         public string Reason { get; set; }
         public double Score { get; set; }
         public DateTime CreatedAt { get; set; }
+        public string? PhotoReference { get; set; }      // Google photo reference
+        public string? PhotoUrl { get; set; }            // Generated photo URL
     }
 }

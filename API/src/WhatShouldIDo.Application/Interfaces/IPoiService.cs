@@ -15,5 +15,6 @@ namespace WhatShouldIDo.Application.Interfaces
         Task<PoiDto> GetByIdAsync(Guid id);
         Task<PoiDto> UpdateAsync(Guid id, UpdatePoiRequest request);
         Task DeleteAsync(Guid id);
+        Task<IEnumerable<PoiDto>> GetNearbyAsync(float lat, float lng, int radiusMeters, string[]? types = null, int maxResults = 20);
     }
 }

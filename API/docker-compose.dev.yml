@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # Main API Application
+  whatshouldido-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5296:8080"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Database=WhatShouldIDo;Username=whatshouldido;Password=dev_password_2024
+      - Redis__ConnectionString=redis:6379
+      - GooglePlaces__ApiKey=${GOOGLE_PLACES_API_KEY}
+      - OpenWeather__ApiKey=${OPENWEATHER_API_KEY}
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - whatshouldido-network
+    restart: unless-stopped
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: whatshouldido-postgres
+    environment:
+      POSTGRES_DB: WhatShouldIDo
+      POSTGRES_USER: whatshouldido
+      POSTGRES_PASSWORD: dev_password_2024
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - whatshouldido-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U whatshouldido"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: whatshouldido-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - whatshouldido-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis Commander (Redis GUI)
+  redis-commander:
+    image: ghcr.io/joeferner/redis-commander:latest
+    container_name: whatshouldido-redis-gui
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8082:8081"
+    depends_on:
+      - redis
+    networks:
+      - whatshouldido-network
+    restart: unless-stopped
+
+  # pgAdmin (PostgreSQL GUI)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: whatshouldido-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@whatshouldido.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8083:80"
+    depends_on:
+      - postgres
+    networks:
+      - whatshouldido-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  whatshouldido-network:
+    driver: bridge

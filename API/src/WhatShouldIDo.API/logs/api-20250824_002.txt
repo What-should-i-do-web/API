@@ -1,0 +1,49 @@
+2025-08-24 21:18:51.927 +03:00 [FTL] Application startup exception
+System.InvalidOperationException: Cannot resolve scoped service 'WhatShouldIDo.Infrastructure.Caching.ICacheService' from root provider.
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteValidator.ValidateResolution(ServiceCallSite callSite, IServiceScope scope, IServiceScope rootScope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.OnResolve(ServiceCallSite callSite, IServiceScope scope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(ServiceIdentifier serviceIdentifier, ServiceProviderEngineScope serviceProviderEngineScope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
+   at Microsoft.Extensions.DependencyInjection.ActivatorUtilities.ConstructorInfoEx.GetService(IServiceProvider serviceProvider, Int32 parameterIndex)
+   at Microsoft.Extensions.DependencyInjection.ActivatorUtilities.ConstructorMatcher.CreateInstance(IServiceProvider provider)
+   at Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance(IServiceProvider provider, Type instanceType, Object[] parameters)
+   at Microsoft.AspNetCore.Builder.UseMiddlewareExtensions.ReflectionMiddlewareBinder.CreateMiddleware(RequestDelegate next)
+   at Microsoft.AspNetCore.Builder.ApplicationBuilder.Build()
+   at Microsoft.AspNetCore.Builder.ApplicationBuilder.Build()
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+2025-08-24 21:18:51.979 +03:00 [ERR] Hosting failed to start
+System.InvalidOperationException: Cannot resolve scoped service 'WhatShouldIDo.Infrastructure.Caching.ICacheService' from root provider.
+   at Microsoft.Extensions.DependencyInjection.ServiceLookup.CallSiteValidator.ValidateResolution(ServiceCallSite callSite, IServiceScope scope, IServiceScope rootScope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.OnResolve(ServiceCallSite callSite, IServiceScope scope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(ServiceIdentifier serviceIdentifier, ServiceProviderEngineScope serviceProviderEngineScope)
+   at Microsoft.Extensions.DependencyInjection.ServiceProvider.GetService(Type serviceType)
+   at Microsoft.Extensions.DependencyInjection.ActivatorUtilities.ConstructorInfoEx.GetService(IServiceProvider serviceProvider, Int32 parameterIndex)
+   at Microsoft.Extensions.DependencyInjection.ActivatorUtilities.ConstructorMatcher.CreateInstance(IServiceProvider provider)
+   at Microsoft.Extensions.DependencyInjection.ActivatorUtilities.CreateInstance(IServiceProvider provider, Type instanceType, Object[] parameters)
+   at Microsoft.AspNetCore.Builder.UseMiddlewareExtensions.ReflectionMiddlewareBinder.CreateMiddleware(RequestDelegate next)
+   at Microsoft.AspNetCore.Builder.ApplicationBuilder.Build()
+   at Microsoft.AspNetCore.Builder.ApplicationBuilder.Build()
+   at Microsoft.AspNetCore.Hosting.GenericWebHostService.StartAsync(CancellationToken cancellationToken)
+   at Microsoft.Extensions.Hosting.Internal.Host.<StartAsync>b__14_1(IHostedService service, CancellationToken token)
+   at Microsoft.Extensions.Hosting.Internal.Host.ForeachService[T](IEnumerable`1 services, CancellationToken token, Boolean concurrent, Boolean abortOnFirstException, List`1 exceptions, Func`3 operation)
+2025-08-24 21:25:24.357 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:25:26.234 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:25:36.706 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:25:47.165 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:25:57.877 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:26:08.390 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:26:18.833 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:26:29.320 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:26:39.827 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:26:50.309 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:27:00.946 +03:00 [WRN] Rate limit exceeded for ip:127.0.0.1 (Tier: "Anonymous"). Requests: 10/10 in 60s
+2025-08-24 21:27:11.474 +03:00 [WRN] Rate limit exceeded for ip:127.0.0.1 (Tier: "Anonymous"). Requests: 10/10 in 60s
+2025-08-24 21:27:21.915 +03:00 [WRN] Rate limit exceeded for ip:127.0.0.1 (Tier: "Anonymous"). Requests: 10/10 in 60s
+2025-08-24 21:27:32.422 +03:00 [WRN] Rate limit exceeded for ip:127.0.0.1 (Tier: "Anonymous"). Requests: 10/10 in 60s
+2025-08-24 21:27:42.969 +03:00 [WRN] Rate limit exceeded for ip:127.0.0.1 (Tier: "Anonymous"). Requests: 10/10 in 60s
+2025-08-24 21:27:53.433 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:27:58.320 +03:00 [INF] API Request: Client=ip:::1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:28:04.200 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:28:14.647 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:28:25.106 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics
+2025-08-24 21:28:35.662 +03:00 [INF] API Request: Client=ip:127.0.0.1, Tier="Anonymous", Endpoint=/metrics

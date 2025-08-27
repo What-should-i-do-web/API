@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <xsd:schema id="root" xmlns="" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata">
+    <xsd:element name="root" msdata:IsDataSet="true">
+      <xsd:complexType>
+        <xsd:choice maxOccurs="unbounded">
+          <xsd:element name="data">
+            <xsd:complexType>
+              <xsd:sequence>
+                <xsd:element name="value" type="xsd:string" minOccurs="0" />
+              </xsd:sequence>
+              <xsd:attribute name="name" type="xsd:string" />
+            </xsd:complexType>
+          </xsd:element>
+        </xsd:choice>
+      </xsd:complexType>
+    </xsd:element>
+  </xsd:schema>
+  
+  <!-- Categories -->
+  <data name="category.restaurant">
+    <value>Restaurant</value>
+  </data>
+  <data name="category.cafe">
+    <value>Cafe</value>
+  </data>
+  <data name="category.museum">
+    <value>Museum</value>
+  </data>
+  <data name="category.park">
+    <value>Park</value>
+  </data>
+  <data name="category.shopping">
+    <value>Shopping</value>
+  </data>
+  <data name="category.entertainment">
+    <value>Entertainment</value>
+  </data>
+  <data name="category.tourist_attraction">
+    <value>Tourist Attraction</value>
+  </data>
+  
+  <!-- Reasons -->
+  <data name="reason.highly_rated">
+    <value>Highly rated</value>
+  </data>
+  <data name="reason.popular">
+    <value>Popular</value>
+  </data>
+  <data name="reason.nearby">
+    <value>Nearby</value>
+  </data>
+  <data name="reason.trending">
+    <value>Trending</value>
+  </data>
+  <data name="reason.recommended">
+    <value>Recommended</value>
+  </data>
+  <data name="reason.matches_preferences">
+    <value>Matches your preferences</value>
+  </data>
+  <data name="reason.good_weather">
+    <value>Good weather for this activity</value>
+  </data>
+  <data name="reason.seasonal">
+    <value>Perfect for this season</value>
+  </data>
+  
+  <!-- Time contexts -->
+  <data name="time.morning">
+    <value>Morning</value>
+  </data>
+  <data name="time.afternoon">
+    <value>Afternoon</value>
+  </data>
+  <data name="time.evening">
+    <value>Evening</value>
+  </data>
+  <data name="time.night">
+    <value>Night</value>
+  </data>
+  
+  <!-- Weather contexts -->
+  <data name="weather.sunny">
+    <value>Sunny</value>
+  </data>
+  <data name="weather.rainy">
+    <value>Rainy</value>
+  </data>
+  <data name="weather.cloudy">
+    <value>Cloudy</value>
+  </data>
+  <data name="weather.snowy">
+    <value>Snowy</value>
+  </data>
+</root>

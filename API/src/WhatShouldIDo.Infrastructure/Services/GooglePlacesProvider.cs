@@ -15,7 +15,7 @@ public class GooglePlacesProvider : IPlacesProvider
     private readonly string _apiKey;
     private readonly ILogger<GooglePlacesProvider> _logger;
     private readonly ICacheService _cache;
-    private readonly IConfiguration _configo;
+    private readonly IConfiguration _configuration;
     private readonly string Base_URL_Places;
     private readonly string Base_URL_Text;
 
@@ -24,7 +24,7 @@ public class GooglePlacesProvider : IPlacesProvider
         _httpClient = httpClient;
         _apiKey = configuration["GooglePlaces:ApiKey"];
         _logger = logger;
-        _configo = configuration;
+        _configuration = configuration;
         _cache = cache;
         Base_URL_Places = configuration["GooglePlaces:NearbyPlacesUrl"];
         Base_URL_Text = configuration["GooglePlaces:PlacesTextUrl"];
@@ -33,7 +33,7 @@ public class GooglePlacesProvider : IPlacesProvider
     public async Task<List<Place>> GetNearbyPlacesAsync(float lat, float lng, int radius, string keyword = null)
     {
         var cacheKey = CacheKeyBuilder.Nearby(lat, lng, radius, keyword);
-        var ttl = TimeSpan.FromMinutes(int.Parse(_configo["CacheOptions:NearbyTtlMinutes"] ?? "30"));
+        var ttl = TimeSpan.FromMinutes(int.Parse(_configuration["CacheOptions:NearbyTtlMinutes"] ?? "30"));
 
         return await _cache.GetOrSetAsync(cacheKey, async () =>
         {
@@ -41,7 +41,9 @@ public class GooglePlacesProvider : IPlacesProvider
 
             var requestBody = new
             {
-                includedTypes = new[] { string.IsNullOrWhiteSpace(keyword) ? "restaurant" : keyword.ToLower() },
+                includedTypes = string.IsNullOrWhiteSpace(keyword) 
+                    ? new[] { "restaurant" }
+                    : keyword.Split(' ', StringSplitOptions.RemoveEmptyEntries).Select(t => t.ToLower()).ToArray(),
                 maxResultCount = 10,
                 locationRestriction = new
                 {
@@ -54,13 +56,20 @@ public class GooglePlacesProvider : IPlacesProvider
             };
 
             var requestJson = JsonSerializer.Serialize(requestBody);
+            _logger.LogInformation("🔍 Request to Google Places API: {requestBody}", requestJson);
+            
             var request = new HttpRequestMessage(HttpMethod.Post, Base_URL_Places);
             request.Headers.Add("X-Goog-Api-Key", _apiKey);
-            request.Headers.Add("X-Goog-FieldMask", "places.displayName,places.location,places.rating,places.types");
+            request.Headers.Add("X-Goog-FieldMask", "places.displayName,places.location,places.rating,places.types,places.photos");
             request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.SendAsync(request);
             var json = await response.Content.ReadAsStringAsync();
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogError("❌ Google Places API error: {statusCode} - {body}", response.StatusCode, json);
+            }
 
             response.EnsureSuccessStatusCode();
 
@@ -77,7 +86,7 @@ public class GooglePlacesProvider : IPlacesProvider
                 var name = item.GetProperty("displayName").GetProperty("text").GetString();
                 var location = item.GetProperty("location");
 
-                places.Add(new Place
+                var place = new Place
                 {
                     Id = Guid.NewGuid(),
                     Name = name,
@@ -86,7 +95,17 @@ public class GooglePlacesProvider : IPlacesProvider
                     Category = item.TryGetProperty("types", out var types) ? string.Join(",", types.EnumerateArray().Select(t => t.GetString())) : null,
                     Source = "Google",
                     CachedAt = DateTime.UtcNow
-                });
+                };
+
+                // Debug: Log the photos structure
+                if (item.TryGetProperty("photos", out var debugPhotos))
+                {
+                    _logger.LogInformation($"🔍 Photos structure for {place.Name}: {debugPhotos.GetRawText()}");
+                }
+                
+                // Enrich with photo
+                place = EnrichWithPhoto(place, item);
+                places.Add(place);
             }
 
             return places;
@@ -96,7 +115,7 @@ public class GooglePlacesProvider : IPlacesProvider
     public async Task<List<Place>> SearchByPromptAsync(string textQuery, float lat, float lng, string[] priceLevels = null)
     {
         var cacheKey = CacheKeyBuilder.Prompt(textQuery, lat, lng);
-        var ttl = TimeSpan.FromMinutes(int.Parse(_configo["CacheOptions:PromptTtlMinutes"] ?? "15"));
+        var ttl = TimeSpan.FromMinutes(int.Parse(_configuration["CacheOptions:PromptTtlMinutes"] ?? "15"));
 
         return await _cache.GetOrSetAsync(cacheKey, async () =>
         {
@@ -126,7 +145,7 @@ public class GooglePlacesProvider : IPlacesProvider
             var json = JsonSerializer.Serialize(requestBody);
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.Add("X-Goog-Api-Key", _apiKey);
-            request.Headers.Add("X-Goog-FieldMask", "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.types,places.location");
+            request.Headers.Add("X-Goog-FieldMask", "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.types,places.location,places.photos");
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.SendAsync(request);
@@ -149,7 +168,7 @@ public class GooglePlacesProvider : IPlacesProvider
             foreach (var item in placesJson.EnumerateArray())
             {
                 var location = item.GetProperty("location");
-                places.Add(new Place
+                var place = new Place
                 {
                     Id = Guid.NewGuid(),
                     Name = item.GetProperty("displayName").GetProperty("text").GetString(),
@@ -161,12 +180,77 @@ public class GooglePlacesProvider : IPlacesProvider
                     Category = item.TryGetProperty("types", out var types) ? string.Join(",", types.EnumerateArray().Select(t => t.GetString())) : null,
                     Source = "Google",
                     CachedAt = DateTime.UtcNow
-                });
+                };
+
+                // Debug: Log the photos structure
+                if (item.TryGetProperty("photos", out var debugPhotos))
+                {
+                    _logger.LogInformation($"🔍 Photos structure for {place.Name}: {debugPhotos.GetRawText()}");
+                }
+                
+                // Enrich with photo
+                place = EnrichWithPhoto(place, item);
+                places.Add(place);
             }
 
             return places;
 
         }, ttl);
+    }
+
+    public string? GetPlacePhotoUrl(string photoName, int maxWidth = 400)
+    {
+        if (string.IsNullOrEmpty(photoName))
+            return null;
+
+        // New Google Places API format: use the photo name directly with maxHeightPx parameter
+        return $"https://places.googleapis.com/v1/{photoName}/media" +
+               $"?key={_apiKey}" +
+               $"&maxHeightPx={maxWidth}" +
+               $"&maxWidthPx={maxWidth}";
+    }
+
+    private Place EnrichWithPhoto(Place place, JsonElement item)
+    {
+        if (item.TryGetProperty("photos", out var photos) && photos.GetArrayLength() > 0)
+        {
+            var firstPhoto = photos[0];
+            
+            // Try new Google Places API format first (name field)
+            if (firstPhoto.TryGetProperty("name", out var photoNameElement))
+            {
+                var photoName = photoNameElement.GetString();
+                if (!string.IsNullOrEmpty(photoName))
+                {
+                    // Store the photo name as reference for potential caching
+                    place.PhotoReference = photoName.Split('/').LastOrDefault(); // Extract just the photo ID for reference
+                    place.PhotoUrl = GetPlacePhotoUrl(photoName, 400);
+                    _logger.LogInformation($"📸 Photo found (new format) for {place.Name}: {photoName}");
+                    return place;
+                }
+            }
+            
+            // Fallback to legacy format (photoReference field) for backward compatibility
+            if (firstPhoto.TryGetProperty("photoReference", out var photoRefElement))
+            {
+                var photoReference = photoRefElement.GetString();
+                if (!string.IsNullOrEmpty(photoReference))
+                {
+                    place.PhotoReference = photoReference;
+                    // Use legacy photo URL format as fallback
+                    place.PhotoUrl = $"https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference={photoReference}&key={_apiKey}";
+                    _logger.LogInformation($"📸 Photo found (legacy format) for {place.Name}: {photoReference[..Math.Min(8, photoReference.Length)]}...");
+                    return place;
+                }
+            }
+            
+            _logger.LogWarning($"📸 Photo structure not recognized for {place.Name}: {firstPhoto.GetRawText()}");
+        }
+        else
+        {
+            _logger.LogInformation($"📸 No photos available for {place.Name}");
+        }
+        return place;
     }
 
 }

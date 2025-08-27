@@ -22,6 +22,8 @@ namespace WhatShouldIDo.Domain.Entities
         public string? PriceLevel { get; set; }
         public bool IsSponsored { get; set; } = false;
         public DateTime? SponsoredUntil { get; set; }
+        public string? PhotoReference { get; set; }      // Google photo reference
+        public string? PhotoUrl { get; set; }            // Generated photo URL
 
     }
 

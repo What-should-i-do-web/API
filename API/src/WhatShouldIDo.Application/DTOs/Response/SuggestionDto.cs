@@ -24,6 +24,8 @@ namespace WhatShouldIDo.Application.DTOs.Response
         public string UserHash { get; set; }       // (opsiyonel, Random kontrolü için)
         public bool IsSponsored { get; set; } = false;
         public DateTime? SponsoredUntil { get; set; }
+        public string? PhotoReference { get; set; }      // Google photo reference
+        public string? PhotoUrl { get; set; }            // Generated photo URL
     }
 
 }
