@@ -3,6 +3,7 @@ using WhatShouldIDo.Domain.Entities;
 using WhatShouldIDo.Infrastructure.Options;
 using Microsoft.Extensions.Options;
 using WhatShouldIDo.Infrastructure.Caching;
+using Microsoft.Extensions.Logging;
 
 namespace WhatShouldIDo.Infrastructure.Services;
 
@@ -15,6 +16,7 @@ public class HybridPlacesOrchestrator : IPlacesProvider
     private readonly Ranker _ranker;
     private readonly CostGuard _costGuard;
     private readonly HybridOptions _options;
+    private readonly ILogger<HybridPlacesOrchestrator> _logger;
 
     public HybridPlacesOrchestrator(
         IPlacesProvider googleProvider,
@@ -23,7 +25,8 @@ public class HybridPlacesOrchestrator : IPlacesProvider
         PlacesMerger merger,
         Ranker ranker,
         CostGuard costGuard,
-        IOptions<HybridOptions> options)
+        IOptions<HybridOptions> options,
+        ILogger<HybridPlacesOrchestrator> logger)
     {
         _googleProvider = googleProvider;
         _otmProvider = otmProvider;
@@ -32,6 +35,7 @@ public class HybridPlacesOrchestrator : IPlacesProvider
         _ranker = ranker;
         _costGuard = costGuard;
         _options = options.Value;
+        _logger = logger;
     }
 
     public async Task<List<Place>> GetNearbyPlacesAsync(float lat, float lng, int radius, string keyword = null)
@@ -60,50 +64,83 @@ public class HybridPlacesOrchestrator : IPlacesProvider
 
     private async Task<List<Place>> ExecuteHybridSearch(float lat, float lng, int radius, string keyword, bool isTourismIntent)
     {
-        Console.WriteLine($"[HYBRID] ExecuteHybridSearch started");
+        _logger.LogInformation("[HYBRID] ExecuteHybridSearch started for lat:{lat}, lng:{lng}, radius:{radius}, keyword:{keyword}", lat, lng, radius, keyword);
         var googleResults = new List<Place>();
         var otmResults = new List<Place>();
 
-        Console.WriteLine($"[HYBRID] Checking Google API...");
+        // Try Google Places API first
+        _logger.LogInformation("[HYBRID] Checking Google API availability...");
         if (_costGuard.CanCall("Google"))
         {
-            Console.WriteLine($"[HYBRID] Calling Google Places API...");
-            // Use SearchByPromptAsync for text queries, GetNearbyPlacesAsync for location-only
-            if (!string.IsNullOrEmpty(keyword))
+            try
             {
-                Console.WriteLine($"[HYBRID] Using text search for keyword: {keyword}");
-                googleResults = await _googleProvider.SearchByPromptAsync(keyword, lat, lng, null);
+                _logger.LogInformation("[HYBRID] Calling Google Places API...");
+                // Use SearchByPromptAsync for text queries, GetNearbyPlacesAsync for location-only
+                if (!string.IsNullOrEmpty(keyword))
+                {
+                    _logger.LogInformation("[HYBRID] Using text search for keyword: {keyword}", keyword);
+                    googleResults = await _googleProvider.SearchByPromptAsync(keyword, lat, lng, null);
+                }
+                else
+                {
+                    _logger.LogInformation("[HYBRID] Using nearby search (no keyword)");
+                    googleResults = await _googleProvider.GetNearbyPlacesAsync(lat, lng, radius, keyword);
+                }
+                _logger.LogInformation("[HYBRID] Google returned {count} results", googleResults.Count);
+                _costGuard.NotifyCall("Google");
+                
+                if (googleResults.Count >= _options.PrimaryTake)
+                    googleResults = googleResults.Take(_options.PrimaryTake).ToList();
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine($"[HYBRID] Using nearby search (no keyword)");
-                googleResults = await _googleProvider.GetNearbyPlacesAsync(lat, lng, radius, keyword);
+                _logger.LogError(ex, "[HYBRID] Google Places API call failed, continuing with empty Google results");
+                googleResults = new List<Place>();
             }
-            Console.WriteLine($"[HYBRID] Google returned {googleResults.Count} results");
-            _costGuard.NotifyCall("Google");
-            
-            if (googleResults.Count >= _options.PrimaryTake)
-                googleResults = googleResults.Take(_options.PrimaryTake).ToList();
+        }
+        else
+        {
+            _logger.LogWarning("[HYBRID] Google API rate limit reached, skipping Google results");
         }
 
         var needsOtmSupplement = googleResults.Count < _options.MinPrimaryResults || 
                                  _options.ForceTourismKinds || 
                                  isTourismIntent;
 
-        Console.WriteLine($"[HYBRID] Needs OTM supplement: {needsOtmSupplement} (Google count: {googleResults.Count})");
+        _logger.LogInformation("[HYBRID] Needs OTM supplement: {needsOtmSupplement} (Google count: {count})", needsOtmSupplement, googleResults.Count);
 
+        // Try OpenTripMap API if needed (with fallback handling)
         if (needsOtmSupplement && _costGuard.CanCall("OpenTripMap"))
         {
-            Console.WriteLine($"[HYBRID] Calling OpenTripMap API...");
-            otmResults = await _otmProvider.GetNearbyPlacesAsync(lat, lng, radius, keyword);
-            Console.WriteLine($"[HYBRID] OpenTripMap returned {otmResults.Count} results");
-            _costGuard.NotifyCall("OpenTripMap");
+            try
+            {
+                _logger.LogInformation("[HYBRID] Calling OpenTripMap API...");
+                otmResults = await _otmProvider.GetNearbyPlacesAsync(lat, lng, radius, keyword);
+                _logger.LogInformation("[HYBRID] OpenTripMap returned {count} results", otmResults.Count);
+                _costGuard.NotifyCall("OpenTripMap");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[HYBRID] OpenTripMap API call failed (likely expired API key), continuing with Google-only results");
+                otmResults = new List<Place>();
+            }
+        }
+        else
+        {
+            _logger.LogInformation("[HYBRID] OpenTripMap skipped - either not needed or rate limit reached");
         }
 
-        Console.WriteLine($"[HYBRID] Merging and ranking results...");
+        // If we have no results from either provider, this is a problem
+        if (googleResults.Count == 0 && otmResults.Count == 0)
+        {
+            _logger.LogWarning("[HYBRID] No results from any provider - check API configurations");
+            return new List<Place>();
+        }
+
+        _logger.LogInformation("[HYBRID] Merging and ranking results...");
         var merged = _merger.Merge(googleResults, otmResults, _options.DedupMeters);
         var ranked = _ranker.Rank(merged, lat, lng);
-        Console.WriteLine($"[HYBRID] Final result: {ranked.Count} places");
+        _logger.LogInformation("[HYBRID] Final result: {count} places", ranked.Count);
         return ranked.Take(50).ToList();
     }
 

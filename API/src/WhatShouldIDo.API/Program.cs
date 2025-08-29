@@ -248,7 +248,8 @@ builder.Services.AddScoped<HybridPlacesOrchestrator>(provider =>
         provider.GetService<PlacesMerger>()!,
         provider.GetService<Ranker>()!,
         provider.GetService<CostGuard>()!,
-        provider.GetService<IOptions<HybridOptions>>()!
+        provider.GetService<IOptions<HybridOptions>>()!,
+        provider.GetService<ILogger<HybridPlacesOrchestrator>>()!
     ));
 
 // Conditional IPlacesProvider registration
