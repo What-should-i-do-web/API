@@ -268,6 +268,7 @@ builder.Services.AddScoped<IPlaceService, PlaceService>();
 builder.Services.AddScoped<IAdvancedFilterService, AdvancedFilterService>();
 builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IPerformanceMonitoringService, PerformanceMonitoringService>();
+builder.Services.AddScoped<IDayPlanningService, DayPlanningService>();
 
 // Controllers
 builder.Services.AddControllers();

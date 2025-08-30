@@ -1,0 +1,55 @@
+# Essential Jenkins Plugins for WhatShouldIDo CI/CD Pipeline
+
+# Core Jenkins plugins
+ant:475.vf34069fef73c
+antisamy-markup-formatter:162.v0e6ec0fcfcf6
+build-timeout:1.31
+credentials-binding:677.vdc9d38cb_254d
+git:5.4.1
+github:1.40.0
+github-branch-source:1795.v0f369ba_9c2b_9
+pipeline-github-lib:61.v629f2cc41d83
+workflow-aggregator:596.v8c21c963d92d
+ws-cleanup:0.45
+
+# Build and testing
+pipeline-stage-view:2.34
+junit:1259.v65ffcef24a_88
+xunit:3.1.2
+htmlpublisher:1.36
+
+# Docker support
+docker-plugin:1.6.2
+docker-workflow:580.vc0c340686b_54
+docker-build-step:2.11
+
+# Notifications and reporting
+email-ext:2.110
+slack:673.v7b_1c6c9b_90fe
+build-user-vars-plugin:1.9
+
+# Security
+role-strategy:690.v3b_8b_c109f0e4
+matrix-auth:3.2.2
+
+# Utility plugins
+pipeline-utility-steps:2.16.2
+timestamper:1.27
+build-name-setter:2.4.1
+environment-injector:2.936.v_c9e3ca_5e7e5e
+
+# Source control
+git-parameter:0.9.19
+bitbucket:223.vd12f2bca5430
+
+# Dashboard and monitoring
+dashboard-view:2.506.v4ee476a_a_b_085
+monitoring:1.98.0
+prometheus:2.2.3
+
+# Multi-branch pipeline
+workflow-multibranch:773.vc4fe1378f1d5
+pipeline-multibranch-defaults:2.1
+
+# Configuration as Code
+configuration-as-code:1810.v9b_c30a_249a_4c

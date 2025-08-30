@@ -430,9 +430,8 @@ $RECYCLE.BIN/
 !.vscode/extensions.json
 
 # Sensitive files - NEVER commit these!
-appsettings.json
+# Keep base appsettings.json but exclude others with sensitive data
 appsettings.Development.json
-appsettings.Production.json
 appsettings.Staging.json
 *.pfx
 *.p12

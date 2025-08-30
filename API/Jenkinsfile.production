@@ -1,0 +1,685 @@
+pipeline {
+    agent any
+    
+    // Global environment variables
+    environment {
+        DOCKER_IMAGE_NAME = 'whatshouldido-api'
+        DOCKER_REGISTRY = 'your-registry.com'
+        DOTNET_CLI_TELEMETRY_OPTOUT = '1'
+        DOTNET_SKIP_FIRST_TIME_EXPERIENCE = '1'
+        NOTIFICATION_SLACK_CHANNEL = '#deployments'
+        NOTIFICATION_EMAIL = 'team@yourdomain.com'
+    }
+    
+    // Pipeline triggers - only for main branch
+    triggers {
+        githubPush()
+    }
+    
+    // Build parameters with approval controls
+    parameters {
+        booleanParam(
+            name: 'DEPLOY_TO_PRODUCTION',
+            defaultValue: false,
+            description: '🚨 Deploy to Production Environment'
+        )
+        booleanParam(
+            name: 'SKIP_TESTS',
+            defaultValue: false,
+            description: 'Skip running tests (NOT recommended for production)'
+        )
+        booleanParam(
+            name: 'EMERGENCY_DEPLOY',
+            defaultValue: false,
+            description: '🚨 Emergency deployment (bypasses some safety checks)'
+        )
+        choice(
+            name: 'DEPLOYMENT_STRATEGY',
+            choices: ['blue-green', 'rolling', 'recreate'],
+            description: 'Production deployment strategy'
+        )
+        string(
+            name: 'APPROVAL_REASON',
+            defaultValue: '',
+            description: 'Reason for this production deployment'
+        )
+    }
+    
+    // Global options
+    options {
+        // Keep only last 10 builds
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+        
+        // Timeout entire pipeline after 45 minutes
+        timeout(time: 45, unit: 'MINUTES')
+        
+        // Prevent concurrent builds
+        disableConcurrentBuilds()
+        
+        // Add timestamps to console output
+        timestamps()
+    }
+    
+    stages {
+        stage('🔍 Pre-flight Checks') {
+            steps {
+                script {
+                    // Only allow production deployment from main branch
+                    if (params.DEPLOY_TO_PRODUCTION && env.BRANCH_NAME != 'main' && env.BRANCH_NAME != 'master') {
+                        error "❌ Production deployment only allowed from main/master branch. Current branch: ${env.BRANCH_NAME}"
+                    }
+                    
+                    // Set environment based on branch and parameters
+                    if (params.DEPLOY_TO_PRODUCTION) {
+                        env.TARGET_ENV = 'production'
+                        env.DEPLOY_HOST = 'your-production-server.com'
+                        env.DEPLOY_PORT = '5000'
+                        env.ENV_FILE = '.env.production'
+                    } else {
+                        env.TARGET_ENV = 'development'
+                        env.DEPLOY_HOST = 'your-dev-server.com'
+                        env.DEPLOY_PORT = '5001'
+                        env.ENV_FILE = '.env.development'
+                    }
+                    
+                    // Set build version
+                    env.BUILD_VERSION = "${env.BUILD_NUMBER}-${env.GIT_COMMIT.take(8)}"
+                    env.DOCKER_TAG = "${env.TARGET_ENV}-${env.BUILD_VERSION}"
+                    
+                    echo "🚀 WhatShouldIDo API Deployment Pipeline"
+                    echo "📋 Deployment Configuration:"
+                    echo "   Branch: ${env.BRANCH_NAME}"
+                    echo "   Target Environment: ${env.TARGET_ENV}"
+                    echo "   Version: ${env.BUILD_VERSION}"
+                    echo "   Deployment Strategy: ${params.DEPLOYMENT_STRATEGY}"
+                    echo "   Deploy Host: ${env.DEPLOY_HOST}"
+                    echo "   Docker Tag: ${env.DOCKER_TAG}"
+                    
+                    if (params.DEPLOY_TO_PRODUCTION) {
+                        echo "⚠️  PRODUCTION DEPLOYMENT REQUESTED"
+                        echo "   Approval Reason: ${params.APPROVAL_REASON ?: 'No reason provided'}"
+                    }
+                }
+            }
+        }
+        
+        stage('📥 Checkout & Validate') {
+            steps {
+                echo '📥 Checking out source code...'
+                checkout scm
+                
+                script {
+                    // Validate that required files exist
+                    def requiredFiles = [
+                        'src/WhatShouldIDo.API/WhatShouldIDo.API.csproj',
+                        'docker-compose.prod.yml',
+                        'scripts/deploy-prod.sh'
+                    ]
+                    
+                    for (file in requiredFiles) {
+                        if (!fileExists(file)) {
+                            error "❌ Required file missing: ${file}"
+                        }
+                    }
+                }
+                
+                // Clean workspace
+                sh '''
+                    echo "🧹 Cleaning workspace..."
+                    rm -rf bin/ obj/ TestResults/
+                    find . -name "*.log" -delete
+                '''
+            }
+        }
+        
+        stage('📦 Dependencies & Build') {
+            steps {
+                echo '📦 Restoring NuGet packages...'
+                sh '''
+                    cd src/WhatShouldIDo.API
+                    dotnet restore WhatShouldIDo.API.csproj --verbosity minimal
+                '''
+                
+                echo '🔨 Building application...'
+                sh '''
+                    cd src/WhatShouldIDo.API
+                    dotnet build WhatShouldIDo.API.csproj \
+                        --configuration Release \
+                        --no-restore \
+                        --verbosity minimal \
+                        -p:Version=${BUILD_VERSION}
+                '''
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'src/WhatShouldIDo.API/bin/Release/**/*', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        stage('🧪 Comprehensive Testing') {
+            when {
+                not { params.SKIP_TESTS }
+            }
+            parallel {
+                stage('Unit Tests') {
+                    steps {
+                        echo '🧪 Running unit tests...'
+                        sh '''
+                            if [ -d "src/WhatShouldIDo.Tests" ]; then
+                                cd src/WhatShouldIDo.Tests
+                                dotnet test WhatShouldIDo.API.IntegrationTests.csproj \
+                                    --configuration Release \
+                                    --no-build \
+                                    --verbosity normal \
+                                    --logger "trx;LogFileName=unit-test-results.trx" \
+                                    --collect:"XPlat Code Coverage"
+                            else
+                                echo "No test project found, skipping unit tests"
+                            fi
+                        '''
+                    }
+                }
+                
+                stage('Security Scan') {
+                    steps {
+                        echo '🔍 Running security scans...'
+                        sh '''
+                            # Dependency vulnerability scan
+                            cd src/WhatShouldIDo.API
+                            dotnet list package --vulnerable --include-transitive > security-scan.txt || true
+                            
+                            # Check for secrets in code
+                            echo "Scanning for potential secrets..."
+                            if grep -r "API_KEY\\|SECRET\\|PASSWORD\\|TOKEN" src/ --include="*.cs" --include="*.json" | grep -v "YOUR_.*_HERE" | grep -v ".env"; then
+                                echo "⚠️ Potential secrets found in source code"
+                                exit 1
+                            else
+                                echo "✅ No secrets found in source code"
+                            fi
+                        '''
+                    }
+                }
+                
+                stage('Code Quality') {
+                    steps {
+                        echo '📊 Analyzing code quality...'
+                        sh '''
+                            # Simple code quality checks
+                            echo "Checking for TODO/FIXME comments..."
+                            todo_count=$(grep -r "TODO\\|FIXME" src/ --include="*.cs" | wc -l || echo "0")
+                            echo "Found $todo_count TODO/FIXME comments"
+                            
+                            if [ "$todo_count" -gt 50 ]; then
+                                echo "⚠️ Too many TODO/FIXME comments ($todo_count). Consider cleaning up before production."
+                                exit 1
+                            fi
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    // Publish test results if they exist
+                    publishTestResults testResultsPattern: 'TestResults/**/*.trx'
+                    
+                    // Archive security scan results
+                    archiveArtifacts artifacts: 'security-scan.txt', allowEmptyArchive: true
+                }
+                failure {
+                    script {
+                        if (!params.EMERGENCY_DEPLOY) {
+                            error "❌ Tests failed. Use EMERGENCY_DEPLOY parameter only in critical situations."
+                        } else {
+                            echo "⚠️ Tests failed but EMERGENCY_DEPLOY is enabled. Continuing..."
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('🐳 Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                script {
+                    def dockerImage = docker.build("${DOCKER_IMAGE_NAME}:${DOCKER_TAG}", "-f src/WhatShouldIDo.API/Dockerfile .")
+                    
+                    // Tag for registry
+                    dockerImage.tag("${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${DOCKER_TAG}")
+                    dockerImage.tag("${DOCKER_REGISTRY}/${DOCKER_IMAGE_NAME}:${env.TARGET_ENV}-latest")
+                    
+                    env.DOCKER_IMAGE_ID = dockerImage.id
+                    
+                    // Test the Docker image
+                    sh """
+                        echo "Testing Docker image..."
+                        docker run --rm -d --name test-container-${BUILD_NUMBER} ${DOCKER_IMAGE_NAME}:${DOCKER_TAG}
+                        sleep 10
+                        docker stop test-container-${BUILD_NUMBER} || true
+                        echo "Docker image test completed"
+                    """
+                }
+            }
+        }
+        
+        stage('📤 Push to Registry') {
+            when {
+                anyOf {
+                    branch 'main'
+                    branch 'master'
+                    branch 'develop'
+                    branch 'dev'
+                }
+            }
+            steps {
+                echo '📤 Pushing Docker image to registry...'
+                script {
+                    docker.withRegistry("https://${DOCKER_REGISTRY}", 'docker-registry-credentials') {
+                        def image = docker.image("${DOCKER_IMAGE_NAME}:${DOCKER_TAG}")
+                        image.push()
+                        image.push("${env.TARGET_ENV}-latest")
+                    }
+                }
+            }
+        }
+        
+        stage('🚨 Production Approval Gate') {
+            when {
+                allOf {
+                    anyOf {
+                        branch 'main'
+                        branch 'master'
+                    }
+                    expression { params.DEPLOY_TO_PRODUCTION }
+                }
+            }
+            steps {
+                script {
+                    echo "🚨 PRODUCTION DEPLOYMENT APPROVAL REQUIRED"
+                    echo "============================================"
+                    echo "Environment: PRODUCTION"
+                    echo "Version: ${env.BUILD_VERSION}"
+                    echo "Branch: ${env.BRANCH_NAME}"
+                    echo "Commit: ${env.GIT_COMMIT.take(8)}"
+                    echo "Deployment Strategy: ${params.DEPLOYMENT_STRATEGY}"
+                    echo "Reason: ${params.APPROVAL_REASON ?: 'No reason provided'}"
+                    echo ""
+                    
+                    // Send approval notification
+                    slackSend(
+                        channel: env.NOTIFICATION_SLACK_CHANNEL,
+                        color: 'warning',
+                        message: """
+🚨 **PRODUCTION DEPLOYMENT APPROVAL REQUIRED**
+**Project**: WhatShouldIDo API
+**Version**: ${env.BUILD_VERSION}
+**Branch**: ${env.BRANCH_NAME}
+**Build**: #${env.BUILD_NUMBER}
+**Strategy**: ${params.DEPLOYMENT_STRATEGY}
+**Reason**: ${params.APPROVAL_REASON ?: 'No reason provided'}
+**Approver**: Please review and approve/reject in Jenkins
+**URL**: ${env.BUILD_URL}
+                        """
+                    )
+                    
+                    // Manual approval step with timeout
+                    timeout(time: 15, unit: 'MINUTES') {
+                        def approvers = ['admin', 'devops-team', 'tech-lead']
+                        
+                        def approved = input(
+                            message: 'Deploy to Production?',
+                            ok: 'Deploy',
+                            submitterParameter: 'APPROVER',
+                            submitter: approvers.join(','),
+                            parameters: [
+                                choice(
+                                    name: 'APPROVAL_ACTION',
+                                    choices: ['APPROVE', 'REJECT'],
+                                    description: 'Approve or Reject this production deployment'
+                                ),
+                                text(
+                                    name: 'APPROVAL_COMMENTS',
+                                    defaultValue: '',
+                                    description: 'Optional comments for this approval'
+                                )
+                            ]
+                        )
+                        
+                        if (approved.APPROVAL_ACTION != 'APPROVE') {
+                            error "❌ Production deployment rejected by ${approved.APPROVER}. Reason: ${approved.APPROVAL_COMMENTS}"
+                        }
+                        
+                        echo "✅ Production deployment approved by: ${approved.APPROVER}"
+                        if (approved.APPROVAL_COMMENTS) {
+                            echo "💬 Approval comments: ${approved.APPROVAL_COMMENTS}"
+                        }
+                        
+                        env.DEPLOYMENT_APPROVER = approved.APPROVER
+                        env.APPROVAL_COMMENTS = approved.APPROVAL_COMMENTS ?: ''
+                        
+                        // Log approval to audit trail
+                        writeFile file: "deployment-approval-${BUILD_NUMBER}.log", text: """
+Deployment Approval Log
+======================
+Timestamp: ${new Date()}
+Build: #${BUILD_NUMBER}
+Version: ${BUILD_VERSION}
+Branch: ${BRANCH_NAME}
+Commit: ${GIT_COMMIT}
+Approver: ${approved.APPROVER}
+Action: ${approved.APPROVAL_ACTION}
+Comments: ${approved.APPROVAL_COMMENTS}
+Deployment Strategy: ${params.DEPLOYMENT_STRATEGY}
+Reason: ${params.APPROVAL_REASON}
+"""
+                        archiveArtifacts artifacts: "deployment-approval-${BUILD_NUMBER}.log"
+                    }
+                }
+            }
+            post {
+                aborted {
+                    slackSend(
+                        channel: env.NOTIFICATION_SLACK_CHANNEL,
+                        color: 'warning',
+                        message: "⏰ Production deployment approval timeout for build #${env.BUILD_NUMBER}"
+                    )
+                }
+            }
+        }
+        
+        stage('🚀 Deploy to Environment') {
+            when {
+                anyOf {
+                    and {
+                        anyOf {
+                            branch 'main'
+                            branch 'master'
+                        }
+                        expression { params.DEPLOY_TO_PRODUCTION }
+                    }
+                    and {
+                        anyOf {
+                            branch 'develop'
+                            branch 'dev'
+                        }
+                        not { params.DEPLOY_TO_PRODUCTION }
+                    }
+                }
+            }
+            steps {
+                script {
+                    echo "🚀 Deploying to ${env.TARGET_ENV} environment using ${params.DEPLOYMENT_STRATEGY} strategy..."
+                    
+                    if (env.TARGET_ENV == 'production') {
+                        // Production deployment with enhanced safety
+                        sh """
+                            echo "🔴 PRODUCTION DEPLOYMENT STARTING"
+                            echo "================================="
+                            echo "Approver: ${env.DEPLOYMENT_APPROVER}"
+                            echo "Strategy: ${params.DEPLOYMENT_STRATEGY}"
+                            echo "Emergency: ${params.EMERGENCY_DEPLOY}"
+                            
+                            # Copy production environment file
+                            scp -o StrictHostKeyChecking=no ${ENV_FILE} deploy@${DEPLOY_HOST}:~/whatshouldido/.env
+                            
+                            # Execute production deployment script on remote server
+                            ssh -o StrictHostKeyChecking=no deploy@${DEPLOY_HOST} '
+                                cd ~/whatshouldido
+                                
+                                # Create deployment manifest
+                                cat > deployment-manifest.json << EOL
+{
+    "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+    "version": "${BUILD_VERSION}",
+                                    "branch": "${BRANCH_NAME}",
+                                    "commit": "${GIT_COMMIT}",
+                                    "approver": "${env.DEPLOYMENT_APPROVER}",
+                                    "strategy": "${params.DEPLOYMENT_STRATEGY}",
+                                    "build_number": "${BUILD_NUMBER}",
+                                    "emergency": ${params.EMERGENCY_DEPLOY}
+                                }
+EOL
+                                
+                                # Run production deployment
+                                if [ "${params.DEPLOYMENT_STRATEGY}" = "blue-green" ]; then
+                                    ./scripts/deploy-prod.sh --strategy=blue-green
+                                elif [ "${params.DEPLOYMENT_STRATEGY}" = "rolling" ]; then
+                                    ./scripts/deploy-prod.sh --strategy=rolling
+                                else
+                                    ./scripts/deploy-prod.sh
+                                fi
+                                
+                                # Verify deployment
+                                sleep 30
+                                if curl -f http://localhost:5000/api/health; then
+                                    echo "✅ Production deployment verification successful"
+                                else
+                                    echo "❌ Production deployment verification failed"
+                                    exit 1
+                                fi
+                            '
+                        """
+                    } else {
+                        // Development deployment
+                        sh """
+                            echo "🟡 DEVELOPMENT DEPLOYMENT STARTING"
+                            echo "=================================="
+                            
+                            # Copy development environment file
+                            scp -o StrictHostKeyChecking=no ${ENV_FILE} deploy@${DEPLOY_HOST}:~/whatshouldido-dev/.env
+                            
+                            # Execute development deployment
+                            ssh -o StrictHostKeyChecking=no deploy@${DEPLOY_HOST} '
+                                cd ~/whatshouldido-dev
+                                ./scripts/deploy-dev.sh --skip-tests
+                                
+                                # Quick verification
+                                sleep 15
+                                if curl -f http://localhost:5001/api/health; then
+                                    echo "✅ Development deployment successful"
+                                else
+                                    echo "❌ Development deployment failed"
+                                    exit 1
+                                fi
+                            '
+                        """
+                    }
+                }
+            }
+            post {
+                success {
+                    script {
+                        echo "✅ Deployment to ${env.TARGET_ENV} completed successfully!"
+                        
+                        // Send success notification
+                        def message = """
+🎉 **DEPLOYMENT SUCCESS**
+**Environment**: ${env.TARGET_ENV.toUpperCase()}
+**Project**: WhatShouldIDo API
+**Version**: ${env.BUILD_VERSION}
+**Branch**: ${env.BRANCH_NAME}
+**Build**: #${env.BUILD_NUMBER}
+**Strategy**: ${params.DEPLOYMENT_STRATEGY}
+**Duration**: ${currentBuild.durationString}
+"""
+                        
+                        if (env.TARGET_ENV == 'production') {
+                            message += "**Approver**: ${env.DEPLOYMENT_APPROVER}\n"
+                            if (env.APPROVAL_COMMENTS) {
+                                message += "**Comments**: ${env.APPROVAL_COMMENTS}\n"
+                            }
+                        }
+                        
+                        slackSend(
+                            channel: env.NOTIFICATION_SLACK_CHANNEL,
+                            color: 'good',
+                            message: message
+                        )
+                        
+                        // Email notification for production
+                        if (env.TARGET_ENV == 'production') {
+                            emailext(
+                                subject: "✅ Production Deployment Success - WhatShouldIDo API ${env.BUILD_VERSION}",
+                                body: message,
+                                recipientProviders: [developers(), requestor()]
+                            )
+                        }
+                    }
+                }
+                failure {
+                    script {
+                        echo "❌ Deployment to ${env.TARGET_ENV} failed!"
+                        
+                        // Send failure notification
+                        def message = """
+💥 **DEPLOYMENT FAILED**
+**Environment**: ${env.TARGET_ENV.toUpperCase()}
+**Project**: WhatShouldIDo API
+**Version**: ${env.BUILD_VERSION}
+**Branch**: ${env.BRANCH_NAME}
+**Build**: #${env.BUILD_NUMBER}
+**Strategy**: ${params.DEPLOYMENT_STRATEGY}
+**Log**: ${env.BUILD_URL}console
+"""
+                        
+                        if (env.TARGET_ENV == 'production' && env.DEPLOYMENT_APPROVER) {
+                            message += "**Approver**: ${env.DEPLOYMENT_APPROVER}\n"
+                        }
+                        
+                        slackSend(
+                            channel: env.NOTIFICATION_SLACK_CHANNEL,
+                            color: 'danger',
+                            message: message
+                        )
+                        
+                        // Critical email for production failures
+                        if (env.TARGET_ENV == 'production') {
+                            emailext(
+                                subject: "🚨 CRITICAL: Production Deployment Failed - WhatShouldIDo API",
+                                body: message,
+                                recipientProviders: [developers(), requestor(), culprits()],
+                                attachLog: true
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        
+        stage('🧪 Post-Deploy Verification') {
+            when {
+                anyOf {
+                    and {
+                        anyOf {
+                            branch 'main'
+                            branch 'master'
+                        }
+                        expression { params.DEPLOY_TO_PRODUCTION }
+                    }
+                    and {
+                        anyOf {
+                            branch 'develop'
+                            branch 'dev'
+                        }
+                        not { params.DEPLOY_TO_PRODUCTION }
+                    }
+                }
+            }
+            steps {
+                script {
+                    def apiUrl = "https://${env.DEPLOY_HOST}"
+                    if (env.TARGET_ENV == 'development') {
+                        apiUrl = "https://dev.${env.DEPLOY_HOST}"
+                    }
+                    
+                    echo "🧪 Running post-deployment verification tests..."
+                    
+                    sh """
+                        echo "Testing critical endpoints at ${apiUrl}..."
+                        
+                        # Health check
+                        echo "Testing health endpoint..."
+                        curl -f ${apiUrl}/api/health -m 30
+                        
+                        # Basic functionality test
+                        echo "Testing discover endpoint..."
+                        curl -f -X POST ${apiUrl}/api/discover/prompt \\
+                            -H "Content-Type: application/json" \\
+                            -d '{"prompt":"restaurants","latitude":41.0082,"longitude":28.9784}' \\
+                            -m 30
+                        
+                        echo "✅ Post-deployment tests passed"
+                    """
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo '🧹 Cleaning up workspace...'
+            
+            // Archive important files
+            archiveArtifacts artifacts: 'logs/**/*.log', allowEmptyArchive: true
+            
+            // Clean up Docker images to save space
+            sh '''
+                echo "Cleaning up old Docker images..."
+                docker image prune -f || true
+                docker container prune -f || true
+            '''
+        }
+        
+        success {
+            script {
+                echo "✅ Pipeline completed successfully!"
+                
+                // Final success notification
+                if (env.TARGET_ENV == 'production') {
+                    slackSend(
+                        channel: env.NOTIFICATION_SLACK_CHANNEL,
+                        color: 'good',
+                        message: """
+🚀 **PRODUCTION DEPLOYMENT COMPLETE**
+WhatShouldIDo API ${env.BUILD_VERSION} is now live!
+Deployed by: ${env.DEPLOYMENT_APPROVER}
+Duration: ${currentBuild.durationString}
+"""
+                    )
+                }
+            }
+        }
+        
+        failure {
+            script {
+                echo "❌ Pipeline failed!"
+                
+                // Failure notification with more details
+                slackSend(
+                    channel: env.NOTIFICATION_SLACK_CHANNEL,
+                    color: 'danger',
+                    message: """
+💥 **PIPELINE FAILURE**
+**Project**: WhatShouldIDo API
+**Branch**: ${env.BRANCH_NAME}
+**Environment**: ${env.TARGET_ENV}
+**Build**: #${env.BUILD_NUMBER}
+**Stage**: ${env.STAGE_NAME ?: 'Unknown'}
+**Duration**: ${currentBuild.durationString}
+**Log**: ${env.BUILD_URL}console
+
+${env.TARGET_ENV == 'production' ? '🚨 PRODUCTION PIPELINE FAILED - IMMEDIATE ATTENTION REQUIRED' : ''}
+"""
+                )
+            }
+        }
+        
+        aborted {
+            slackSend(
+                channel: env.NOTIFICATION_SLACK_CHANNEL,
+                color: 'warning',
+                message: "⏹️ Pipeline aborted for WhatShouldIDo API build #${env.BUILD_NUMBER}"
+            )
+        }
+    }
+}

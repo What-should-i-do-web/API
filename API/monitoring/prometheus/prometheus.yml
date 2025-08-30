@@ -1,41 +1,75 @@
+# Prometheus configuration for WhatShouldIDo API monitoring
+
 global:
   scrape_interval: 15s
   evaluation_interval: 15s
+  external_labels:
+    cluster: 'whatshouldido-production'
+    environment: 'production'
 
+# Load and evaluate alert rules
 rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
+  - "/etc/prometheus/rules/*.yml"
 
+# Alert manager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# Scrape configurations
 scrape_configs:
-  # WhatShouldIDo API - Main Application
-  - job_name: 'whatshouldido-api'
-    static_configs:
-      - targets: ['host.docker.internal:5296']
-    metrics_path: '/metrics'
-    scrape_interval: 10s
-    scrape_timeout: 5s
-
   # Prometheus itself
   - job_name: 'prometheus'
     static_configs:
       - targets: ['localhost:9090']
-
-  # Node Exporter - System Metrics
+    scrape_interval: 15s
+    metrics_path: /metrics
+    
+  # WhatShouldIDo API - Main application
+  - job_name: 'whatshouldido-api'
+    static_configs:
+      - targets: ['api:5000']  # Production API
+    scrape_interval: 15s
+    metrics_path: /metrics
+    scrape_timeout: 10s
+    honor_labels: true
+    
+  # System metrics - Node Exporter
   - job_name: 'node-exporter'
     static_configs:
       - targets: ['node-exporter:9100']
-
-  # cAdvisor - Container Metrics  
+    scrape_interval: 15s
+    metrics_path: /metrics
+    
+  # Container metrics - cAdvisor
   - job_name: 'cadvisor'
     static_configs:
       - targets: ['cadvisor:8080']
-
-  # Redis Cluster Metrics
-  - job_name: 'redis-cluster'
+    scrape_interval: 15s
+    metrics_path: /metrics
+    
+  # Redis metrics
+  - job_name: 'redis-exporter'
     static_configs:
       - targets: ['redis-exporter:9121']
-
-  # Additional services (uncomment as needed)
-  # - job_name: 'sql-server'
-  #   static_configs:
-  #     - targets: ['sql-exporter:9399']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    
+  # Blackbox exporter - Endpoint monitoring
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://api:5000/api/health
+        - https://yourdomain.com/api/health
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
