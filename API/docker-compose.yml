@@ -18,6 +18,11 @@ services:
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=WhatShouldIDo;User Id=sa;Password=1471027Demo;TrustServerCertificate=True;Encrypt=False"
+      Redis__ConnectionString: "redis:6379"
+      GooglePlaces__ApiKey: "REMOVED"REMOVED_GOOGLE_PLACES_KEY"
+      OpenTripMap__ApiKey: "REMOVED"REMOVED_OPENTRIPMAP_KEY"
+      OpenWeather__ApiKey: "your_openweather_api_key_here"
+      Geoapify__ApiKey: "your_geoapify_api_key_here"
     depends_on:
       - sqlserver
       - redis 
