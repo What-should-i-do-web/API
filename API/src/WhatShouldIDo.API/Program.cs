@@ -308,6 +308,8 @@ else
     app.UseCors("AllowFrontend");
 }
 
+
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 app.UseRequestLocalization();
 app.UseAuthentication();
 app.UseApiRateLimit();
