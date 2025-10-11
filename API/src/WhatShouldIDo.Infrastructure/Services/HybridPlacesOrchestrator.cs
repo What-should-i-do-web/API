@@ -1,4 +1,5 @@
 using WhatShouldIDo.Application.Interfaces;
+using WhatShouldIDo.Application.Common;
 using WhatShouldIDo.Domain.Entities;
 using WhatShouldIDo.Infrastructure.Options;
 using Microsoft.Extensions.Options;
@@ -115,9 +116,20 @@ public class HybridPlacesOrchestrator : IPlacesProvider
             try
             {
                 _logger.LogInformation("[HYBRID] Calling OpenTripMap API...");
-                otmResults = await _otmProvider.GetNearbyPlacesAsync(lat, lng, radius, keyword);
-                _logger.LogInformation("[HYBRID] OpenTripMap returned {count} results", otmResults.Count);
-                _costGuard.NotifyCall("OpenTripMap");
+                var otmResult = await _otmProvider.GetNearbyPlacesAsync(lat, lng, radius, keyword);
+
+                if (otmResult.IsSuccess && otmResult.Data != null)
+                {
+                    otmResults = otmResult.Data;
+                    _logger.LogInformation("[HYBRID] OpenTripMap returned {count} results", otmResults.Count);
+                    _costGuard.NotifyCall("OpenTripMap");
+                }
+                else
+                {
+                    _logger.LogWarning("[HYBRID] OpenTripMap call unsuccessful: {status} - {reason}",
+                        otmResult.Status, otmResult.SkippedReason ?? "Unknown");
+                    otmResults = new List<Place>();
+                }
             }
             catch (Exception ex)
             {

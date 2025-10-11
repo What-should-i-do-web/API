@@ -9,7 +9,8 @@
       "Bash(dotnet build:*)",
       "Bash(dotnet ef migrations add:*)",
       "Bash(dotnet ef database update:*)",
-      "Bash(dotnet run:*)"
+      "Bash(dotnet run:*)",
+      "Read(//c/Users/ertan/Desktop/LAB/githubProjects/WhatShouldIDo/NeYapsamWeb/**)"
     ],
     "deny": [],
     "ask": []

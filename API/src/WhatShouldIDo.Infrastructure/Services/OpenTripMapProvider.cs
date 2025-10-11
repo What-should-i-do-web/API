@@ -1,5 +1,6 @@
 using WhatShouldIDo.Domain.Entities;
 using WhatShouldIDo.Infrastructure.Options;
+using WhatShouldIDo.Application.Common;
 using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -19,8 +20,15 @@ public class OpenTripMapProvider
         _logger = logger;
     }
 
-    public async Task<List<Place>> GetNearbyPlacesAsync(float lat, float lng, int radius, string keyword = null)
+    public async Task<ProviderResult<List<Place>>> GetNearbyPlacesAsync(float lat, float lng, int radius, string keyword = null)
     {
+        // Check if API key is configured
+        if (string.IsNullOrWhiteSpace(_options.ApiKey) || _options.ApiKey.StartsWith("${"))
+        {
+            _logger.LogWarning("[OTM] API key not configured (missing or placeholder). SkippedReason: NoApiKey");
+            return ProviderResult<List<Place>>.ApiKeyInvalid("OpenTripMap");
+        }
+
         try
         {
             var kinds = string.Join(",", _options.Kinds);
@@ -28,52 +36,67 @@ public class OpenTripMapProvider
                       $"?lat={lat}&lon={lng}&radius={radius}" +
                       $"&kinds={kinds}&limit=50&apikey={_options.ApiKey}";
 
-            _logger.LogInformation("[OTM] Calling OpenTripMap API: {url}", url);
+            _logger.LogInformation("[OTM] Calling OpenTripMap API - lat:{lat}, lng:{lng}, radius:{radius}", lat, lng, radius);
 
             var response = await _httpClient.GetAsync(url);
-            
+            var httpStatus = (int)response.StatusCode;
+
             if (!response.IsSuccessStatusCode)
             {
                 var errorContent = await response.Content.ReadAsStringAsync();
-                _logger.LogError("[OTM] OpenTripMap API failed with status {statusCode}: {errorContent}", 
-                    response.StatusCode, errorContent);
-                
+                _logger.LogError("[OTM] HTTP {httpStatus}: {errorContent} | SkippedReason: HttpError", httpStatus, errorContent);
+
                 // Check if it's an API key issue
-                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden || 
+                if (response.StatusCode == System.Net.HttpStatusCode.Forbidden ||
                     response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
                 {
-                    _logger.LogWarning("[OTM] OpenTripMap API key appears to be invalid or expired. Returning empty results.");
+                    _logger.LogWarning("[OTM] API key invalid or expired. SkippedReason: ApiKeyInvalid");
+                    return ProviderResult<List<Place>>.ApiKeyInvalid("OpenTripMap", httpStatus);
                 }
-                
-                return new List<Place>();
+
+                if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    _logger.LogWarning("[OTM] Rate limit exceeded (429). SkippedReason: RateLimited");
+                    return ProviderResult<List<Place>>.RateLimited("OpenTripMap", "HTTP 429 - Too Many Requests");
+                }
+
+                return ProviderResult<List<Place>>.Error("OpenTripMap", $"HTTP {httpStatus}: {errorContent}");
             }
 
             var json = await response.Content.ReadAsStringAsync();
             var data = JsonSerializer.Deserialize<OtmResponse>(json);
 
             var places = data?.Features?.Select(MapToPlace).ToList() ?? new List<Place>();
-            _logger.LogInformation("[OTM] OpenTripMap returned {count} places", places.Count);
-            
-            return places;
-        }
-        catch (HttpRequestException ex)
-        {
-            _logger.LogError(ex, "[OTM] Network error calling OpenTripMap API. Returning empty results.");
-            return new List<Place>();
+
+            _logger.LogInformation(
+                "[OTM] Provider call completed | Status: Success | Count: {count} | HTTP: {httpStatus} | Lat: {lat} | Lng: {lng} | Radius: {radius}",
+                places.Count, httpStatus, lat, lng, radius);
+
+            if (places.Count == 0)
+            {
+                return ProviderResult<List<Place>>.NoResults("OpenTripMap");
+            }
+
+            return ProviderResult<List<Place>>.Success(places, places.Count, "OpenTripMap");
         }
         catch (TaskCanceledException ex)
         {
-            _logger.LogError(ex, "[OTM] OpenTripMap API call timed out. Returning empty results.");
-            return new List<Place>();
+            _logger.LogError(ex, "[OTM] Request timed out after {timeout}ms. SkippedReason: Timeout", _options.TimeoutMs);
+            return ProviderResult<List<Place>>.Timeout("OpenTripMap", $"Timeout after {_options.TimeoutMs}ms");
+        }
+        catch (HttpRequestException ex)
+        {
+            _logger.LogError(ex, "[OTM] Network error. SkippedReason: NetworkError");
+            return ProviderResult<List<Place>>.NetworkError("OpenTripMap", ex.Message);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "[OTM] Unexpected error calling OpenTripMap API. Returning empty results.");
-            return new List<Place>();
+            _logger.LogError(ex, "[OTM] Unexpected error. SkippedReason: Exception");
+            return ProviderResult<List<Place>>.Error("OpenTripMap", ex.Message);
         }
     }
 
-    public async Task<List<Place>> SearchByPromptAsync(string textQuery, float lat, float lng, string[] priceLevels = null)
+    public async Task<ProviderResult<List<Place>>> SearchByPromptAsync(string textQuery, float lat, float lng, string[] priceLevels = null)
     {
         return await GetNearbyPlacesAsync(lat, lng, 5000, textQuery);
     }

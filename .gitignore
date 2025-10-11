@@ -24,3 +24,5 @@ Thumbs.db
 # Docker overrides
 docker-compose.override.yml
 /API/nul
+/API/HYBRID_SEARCH_FIX_SUMMARY.md
+/API/lastChanges.txt

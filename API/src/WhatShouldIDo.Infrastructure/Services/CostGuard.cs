@@ -18,9 +18,42 @@ public class CostGuard
     {
         var usage = GetOrCreateUsage(provider);
         var limits = GetProviderLimits(provider);
-        
-        return usage.DailyCount < limits.DailyCap && 
-               usage.GetRpm() < limits.RequestsPerMinute;
+
+        var canCall = usage.DailyCount < limits.DailyCap &&
+                      usage.GetRpm() < limits.RequestsPerMinute;
+
+        if (!canCall)
+        {
+            var reason = usage.DailyCount >= limits.DailyCap
+                ? $"Daily cap reached ({usage.DailyCount}/{limits.DailyCap})"
+                : $"RPM limit reached ({usage.GetRpm()}/{limits.RequestsPerMinute})";
+
+            System.Diagnostics.Debug.WriteLine($"[COSTGUARD] {provider} blocked: {reason}");
+        }
+
+        return canCall;
+    }
+
+    public string GetBlockedReason(string provider)
+    {
+        var usage = GetOrCreateUsage(provider);
+        var limits = GetProviderLimits(provider);
+
+        if (usage.DailyCount >= limits.DailyCap)
+            return $"DailyCap ({usage.DailyCount}/{limits.DailyCap})";
+
+        if (usage.GetRpm() >= limits.RequestsPerMinute)
+            return $"RPM ({usage.GetRpm()}/{limits.RequestsPerMinute})";
+
+        return "None";
+    }
+
+    public (int dailyUsed, int dailyCap, int currentRpm, int rpmLimit) GetUsageStats(string provider)
+    {
+        var usage = GetOrCreateUsage(provider);
+        var limits = GetProviderLimits(provider);
+
+        return (usage.DailyCount, limits.DailyCap, usage.GetRpm(), limits.RequestsPerMinute);
     }
 
     public bool ShouldDegrade(string provider)

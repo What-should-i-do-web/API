@@ -1,35 +1,67 @@
-services:
-  sqlserver:
-    image: mcr.microsoft.com/mssql/server:2019-latest
-    environment:
-      SA_PASSWORD: "1471027Demo"
-      ACCEPT_EULA: "Y"
-    ports:
-      - "1433:1433"
-    volumes:
-      - sqlserverdata:/var/opt/mssql
+﻿version: '3.9'
 
-  api:
-    build:
-      context: .
-      dockerfile: /src/WhatShouldIDo.API/Dockerfile
-    ports:
-      - "5000:8080"
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgresDb
+    restart: always
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
-      ConnectionStrings__DefaultConnection: "Server=sqlserver;Database=WhatShouldIDo;User Id=sa;Password=1471027Demo;TrustServerCertificate=True;Encrypt=False"
-      Redis__ConnectionString: "redis:6379"
-      GooglePlaces__ApiKey: "REMOVED"REMOVED_GOOGLE_PLACES_KEY"
-      OpenTripMap__ApiKey: "REMOVED"REMOVED_OPENTRIPMAP_KEY"
-      OpenWeather__ApiKey: "your_openweather_api_key_here"
-      Geoapify__ApiKey: "your_geoapify_api_key_here"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: Wisido
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    networks:
+      - mynet
+
+  pgadmin:
+    image: dpage/pgadmin4
+    container_name: wisidoPgAdmin
+    restart: always
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@local.dev
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
     depends_on:
-      - sqlserver
-      - redis 
+      - postgres
+    networks:
+      - mynet
+
   redis:
     image: redis
     ports:
       - "6379:6379"
+    networks:
+      - mynet
+
+  api:
+    build:
+      context: .
+      dockerfile: src/WhatShouldIDo.API/Dockerfile
+    ports:
+      - "5000:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__DefaultConnection: "Host=postgres;Port=5432;Database=Wisido;Username=postgres;Password=postgres"
+      DatabaseProvider: "Postgres"
+      Redis__ConnectionString: "redis:6379"
+      GooglePlaces__ApiKey: "REMOVED"REMOVED_GOOGLE_PLACES_KEY"
+      OpenTripMap__ApiKey: "REMOVED"REMOVED_OPENTRIPMAP_KEY"
+      OpenWeather__ApiKey: "your_openweather_api_key_here"
+      Geoapify__ApiKey: "REMOVED_GOOGLE_PLACES_KEY"
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - mynet
 
 volumes:
-  sqlserverdata:
+  pgdata:
+
+networks:
+  mynet:
+    name: api_mynet
+    driver: bridge
