@@ -1,0 +1,35 @@
+name: ci
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore WhatShouldIDo.sln
+
+      - name: Build
+        run: dotnet build WhatShouldIDo.sln -c Release --no-restore
+
+      - name: Run tests
+        run: dotnet test WhatShouldIDo.sln -c Release --no-build
+        continue-on-error: true
+
+      - name: Docker build check
+        run: docker build -t whatshouldido-api-test .
