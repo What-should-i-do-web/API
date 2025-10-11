@@ -542,9 +542,28 @@ tramp
 *.swo
 *~
 
+# legacy & config
+monitoring/
+monitoringgrafanadashboards/
+monitoringgrafanaprovisioningdashboards/
+monitoringgrafanaprovisioningdatasources/
+monitoringprometheus/
+
+# Visual Studio compose projeleri
+docker-compose.dcproj
+
+# geçici ve local dosyalar
+nul
+project-structure.txt
 # Project specific
 WhatShouldIDo_Project_Documentation.txt
 TEST_PLAN_*.md
 k6-tests/
 monitoring/
 redis-config/
+
+# Terraform local state
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/terraform.tfvars
