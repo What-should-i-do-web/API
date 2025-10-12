@@ -2,5 +2,5 @@
 
 public class Class1
 {
-    //test push
+    //test pushs
 }
