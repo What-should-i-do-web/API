@@ -1,4 +1,5 @@
 name: ci
+
 on:
   push:
     branches:
@@ -13,9 +14,6 @@ permissions:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: .
 
     steps:
       - name: Checkout code
@@ -27,17 +25,26 @@ jobs:
           dotnet-version: '8.0.x'
 
       - name: Verify solution file exists
-        run: ls -al . | grep WhatShouldIDo.sln || echo "Solution file not found"
+        run: |
+          echo "Current directory: $(pwd)"
+          echo "Listing contents:"
+          ls -al
+          if [ ! -f "./WhatShouldIDo.sln" ]; then
+            echo "❌ Solution file not found in workspace!"
+            exit 1
+          else
+            echo "✅ Solution file found: ./WhatShouldIDo.sln"
+          fi
 
       - name: Restore dependencies
-        run: dotnet restore WhatShouldIDo.sln
+        run: dotnet restore ./WhatShouldIDo.sln
 
       - name: Build solution
-        run: dotnet build WhatShouldIDo.sln -c Release --no-restore
+        run: dotnet build ./WhatShouldIDo.sln -c Release --no-restore
 
       - name: Run tests
-        run: dotnet test src/WhatShouldIDo.Tests/WhatShouldIDo.API.IntegrationTests.csproj -c Release --no-build
+        run: dotnet test ./src/WhatShouldIDo.Tests/WhatShouldIDo.API.IntegrationTests.csproj -c Release --no-build
         continue-on-error: true
 
       - name: Docker build check
-        run: docker build -t whatshouldido-api-test -f src/WhatShouldIDo.API/Dockerfile .
+        run: docker build -t whatshouldido-api-test -f ./src/WhatShouldIDo.API/Dockerfile .
