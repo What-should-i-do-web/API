@@ -27,24 +27,26 @@ jobs:
       - name: Verify solution file exists
         run: |
           echo "Current directory: $(pwd)"
-          echo "Listing parent directory contents:"
-          ls -al ..
-          if [ ! -f "../WhatShouldIDo.sln" ]; then
-            echo "❌ Solution file not found in parent directory!"
+          echo "Listing current directory:"
+          ls -al
+          echo "Listing API directory:"
+          ls -al ./API
+          if [ ! -f "./API/WhatShouldIDo.sln" ]; then
+            echo "❌ Solution file not found at ./API/WhatShouldIDo.sln"
             exit 1
           else
-            echo "✅ Solution file found: ../WhatShouldIDo.sln"
+            echo "✅ Solution file found: ./API/WhatShouldIDo.sln"
           fi
 
       - name: Restore dependencies
-        run: dotnet restore ../WhatShouldIDo.sln
+        run: dotnet restore ./API/WhatShouldIDo.sln
 
       - name: Build solution
-        run: dotnet build ../WhatShouldIDo.sln -c Release --no-restore
+        run: dotnet build ./API/WhatShouldIDo.sln -c Release --no-restore
 
       - name: Run tests
-        run: dotnet test ../src/WhatShouldIDo.Tests/WhatShouldIDo.API.IntegrationTests.csproj -c Release --no-build
+        run: dotnet test ./API/src/WhatShouldIDo.Tests/WhatShouldIDo.API.IntegrationTests.csproj -c Release --no-build
         continue-on-error: true
 
       - name: Docker build check
-        run: docker build -t whatshouldido-api-test -f ../src/WhatShouldIDo.API/Dockerfile ..
+        run: docker build -t whatshouldido-api-test -f ./API/src/WhatShouldIDo.API/Dockerfile ./API
