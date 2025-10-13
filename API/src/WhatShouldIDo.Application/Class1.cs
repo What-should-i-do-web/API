@@ -2,5 +2,5 @@
 
 public class Class1
 {
-    //CI.CD test
+    //CI.CD test2
 }
