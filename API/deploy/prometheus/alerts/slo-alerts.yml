@@ -1,0 +1,297 @@
+# SLO-based alert rules for WhatShouldIDo API
+# Based on 99.9% availability SLO and latency SLOs (p95 < 300ms, p99 < 800ms)
+
+groups:
+  - name: availability-slo
+    interval: 30s
+    rules:
+      # Error budget burn rate alerts (multi-window, multi-burn-rate)
+      - alert: ErrorBudgetBurn_Critical
+        expr: |
+          (
+            sum(rate(requests_total{status_code=~"5.."}[5m]))
+            /
+            sum(rate(requests_total[5m]))
+          ) > 0.01
+        for: 2m
+        labels:
+          severity: critical
+          slo: availability
+          burn_rate: fast
+        annotations:
+          summary: "Critical error budget burn rate"
+          description: "Error rate is {{ $value | humanizePercentage }} over 5m (10x SLO burn rate)"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/error-budget-burn"
+
+      - alert: ErrorBudgetBurn_Warning
+        expr: |
+          (
+            sum(rate(requests_total{status_code=~"5.."}[1h]))
+            /
+            sum(rate(requests_total[1h]))
+          ) > 0.001
+        for: 10m
+        labels:
+          severity: warning
+          slo: availability
+          burn_rate: medium
+        annotations:
+          summary: "Elevated error budget burn rate"
+          description: "Error rate is {{ $value | humanizePercentage }} over 1h (SLO threshold)"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/error-budget-burn"
+
+      - alert: HighErrorRate_5xx
+        expr: |
+          sum(rate(requests_total{status_code=~"5.."}[10m])) by (endpoint) > 1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High 5xx error rate on {{ $labels.endpoint }}"
+          description: "{{ $value }} errors/sec on {{ $labels.endpoint }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/high-error-rate"
+
+  - name: latency-slo
+    interval: 30s
+    rules:
+      - alert: HighLatency_p95
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(request_duration_seconds_bucket[10m])) by (le, endpoint)
+          ) > 0.3
+        for: 10m
+        labels:
+          severity: critical
+          slo: latency
+          percentile: p95
+        annotations:
+          summary: "p95 latency exceeds 300ms SLO on {{ $labels.endpoint }}"
+          description: "p95 latency is {{ $value }}s on {{ $labels.endpoint }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/high-latency"
+
+      - alert: HighLatency_p99
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(request_duration_seconds_bucket[10m])) by (le, endpoint)
+          ) > 0.8
+        for: 10m
+        labels:
+          severity: critical
+          slo: latency
+          percentile: p99
+        annotations:
+          summary: "p99 latency exceeds 800ms SLO on {{ $labels.endpoint }}"
+          description: "p99 latency is {{ $value }}s on {{ $labels.endpoint }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/high-latency"
+
+      - alert: HighLatency_p50
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(request_duration_seconds_bucket[5m])) by (le, endpoint)
+          ) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          slo: latency
+          percentile: p50
+        annotations:
+          summary: "p50 latency degraded on {{ $labels.endpoint }}"
+          description: "p50 latency is {{ $value }}s on {{ $labels.endpoint }} (warning threshold: 100ms)"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+
+  - name: quota-system-health
+    interval: 30s
+    rules:
+      - alert: RedisQuotaScriptHighLatency_Critical
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(redis_quota_script_latency_seconds_bucket[10m])) by (le)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis quota script latency critically high"
+          description: "Redis script p95 latency is {{ $value }}s (critical threshold: 100ms)"
+          dashboard: "https://grafana.local/d/quota-entitlements"
+          runbook: "https://docs.internal/runbooks/redis-high-latency"
+
+      - alert: RedisQuotaScriptHighLatency_Warning
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(redis_quota_script_latency_seconds_bucket[10m])) by (le)
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis quota script latency elevated"
+          description: "Redis script p95 latency is {{ $value }}s (warning threshold: 50ms)"
+          dashboard: "https://grafana.local/d/quota-entitlements"
+          runbook: "https://docs.internal/runbooks/redis-high-latency"
+
+      - alert: RedisHighErrorRate
+        expr: |
+          (
+            rate(redis_errors_total[5m])
+            /
+            (rate(redis_errors_total[5m]) + rate(redis_quota_script_latency_seconds_count[5m]))
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High Redis error rate"
+          description: "Redis error rate is {{ $value | humanizePercentage }}"
+          dashboard: "https://grafana.local/d/quota-entitlements"
+          runbook: "https://docs.internal/runbooks/redis-errors"
+
+      - alert: QuotaBlockSurge
+        expr: |
+          (
+            rate(quota_blocked_total[10m])
+            /
+            rate(quota_consumed_total[10m] offset 1h)
+          ) > 2.0
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Unusual surge in quota blocks"
+          description: "Quota blocks surged by {{ $value }}x compared to 1h ago"
+          dashboard: "https://grafana.local/d/quota-entitlements"
+          runbook: "https://docs.internal/runbooks/quota-anomaly"
+
+      - alert: ManyUsersWithZeroQuota
+        expr: quota_users_with_zero > 100
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many users with exhausted quota"
+          description: "{{ $value }} users currently have zero quota"
+          dashboard: "https://grafana.local/d/quota-entitlements"
+
+  - name: database-health
+    interval: 30s
+    rules:
+      - alert: PostgresHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(db_latency_seconds_bucket[10m])) by (le)
+          ) > 0.2
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL query latency high"
+          description: "Postgres p95 latency is {{ $value }}s (threshold: 200ms)"
+          dashboard: "https://grafana.local/d/persistence"
+          runbook: "https://docs.internal/runbooks/postgres-slow"
+
+      - alert: PostgresHighErrorRate
+        expr: |
+          (
+            rate(db_subscription_reads_total{outcome="error"}[5m])
+            /
+            rate(db_subscription_reads_total[5m])
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High PostgreSQL error rate"
+          description: "Postgres error rate is {{ $value | humanizePercentage }}"
+          dashboard: "https://grafana.local/d/persistence"
+          runbook: "https://docs.internal/runbooks/postgres-errors"
+
+  - name: webhook-health
+    interval: 30s
+    rules:
+      - alert: WebhookVerificationHighFailureRate
+        expr: |
+          (
+            rate(webhook_verify_failures_total[10m])
+            /
+            rate(webhook_events_total[10m])
+          ) > 0.01
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High webhook verification failure rate"
+          description: "{{ $value | humanizePercentage }} of webhooks failing signature verification"
+          dashboard: "https://grafana.local/d/webhooks"
+          runbook: "https://docs.internal/runbooks/webhook-verification"
+
+      - alert: WebhookHighErrorRate
+        expr: |
+          (
+            rate(webhook_events_total{outcome="failure"}[10m])
+            /
+            rate(webhook_events_total[10m])
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High webhook processing error rate"
+          description: "{{ $value | humanizePercentage }} of webhooks failing to process"
+          dashboard: "https://grafana.local/d/webhooks"
+
+  - name: rate-limiting
+    interval: 30s
+    rules:
+      - alert: HighRateLimitBlocks
+        expr: |
+          rate(rate_limit_blocks_total[5m]) by (endpoint) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High rate limit block rate on {{ $labels.endpoint }}"
+          description: "{{ $value }} blocks/sec on {{ $labels.endpoint }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+
+  - name: infrastructure
+    interval: 30s
+    rules:
+      - alert: PodCrashLooping
+        expr: rate(kube_pod_container_status_restarts_total[15m]) > 0
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Pod {{ $labels.pod }} is crash looping"
+          description: "Pod has restarted {{ $value }} times in 15 minutes"
+          runbook: "https://docs.internal/runbooks/pod-crash-loop"
+
+      - alert: PodNotReady
+        expr: kube_pod_status_phase{phase!="Running"} > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Pod {{ $labels.pod }} not ready"
+          description: "Pod in phase {{ $labels.phase }} for 5+ minutes"
+          runbook: "https://docs.internal/runbooks/pod-not-ready"
+
+      - alert: HPAMaxedOut
+        expr: |
+          (
+            kube_horizontalpodautoscaler_status_current_replicas
+            /
+            kube_horizontalpodautoscaler_spec_max_replicas
+          ) >= 1
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "HPA {{ $labels.horizontalpodautoscaler }} maxed out"
+          description: "HPA at max replicas for 15+ minutes - consider increasing max"
+          runbook: "https://docs.internal/runbooks/hpa-maxed"

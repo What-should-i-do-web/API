@@ -1,25 +1,41 @@
 using System.Diagnostics;
-using WhatShouldIDo.Infrastructure.Services;
+using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.API.Middleware
 {
+    /// <summary>
+    /// Middleware that records detailed metrics for all HTTP requests.
+    /// Captures request duration, status codes, user context, and OpenTelemetry spans.
+    /// </summary>
     public class MetricsMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly IMetricsService _metricsService;
         private readonly ILogger<MetricsMiddleware> _logger;
 
+        /// <summary>
+        /// Initializes a new instance of the <see cref="MetricsMiddleware"/> class.
+        /// </summary>
+        /// <param name="next">The next middleware in the pipeline</param>
+        /// <param name="logger">The logger instance</param>
         public MetricsMiddleware(
             RequestDelegate next,
-            IMetricsService metricsService,
             ILogger<MetricsMiddleware> logger)
         {
-            _next = next;
-            _metricsService = metricsService;
-            _logger = logger;
+            _next = next ?? throw new ArgumentNullException(nameof(next));
+            _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task InvokeAsync(HttpContext context)
+        /// <summary>
+        /// Processes the HTTP request and records comprehensive metrics.
+        /// </summary>
+        /// <param name="context">The HTTP context</param>
+        /// <param name="metricsService">The metrics service (injected per request)</param>
+        /// <param name="observabilityContext">The observability context (injected per request)</param>
+        /// <returns>A task representing the asynchronous operation</returns>
+        public async Task InvokeAsync(
+            HttpContext context,
+            IMetricsService metricsService,
+            IObservabilityContext observabilityContext)
         {
             var stopwatch = Stopwatch.StartNew();
             var path = context.Request.Path.ToString();
@@ -39,15 +55,57 @@ namespace WhatShouldIDo.API.Middleware
             finally
             {
                 stopwatch.Stop();
-                var duration = stopwatch.Elapsed.TotalSeconds;
+                var durationMs = stopwatch.Elapsed.TotalMilliseconds;
                 var statusCode = context.Response.StatusCode;
 
-                // Normalize endpoint path for metrics
+                // Normalize endpoint path for metrics (avoid high cardinality)
                 var normalizedPath = NormalizeEndpoint(path);
+
+                // Get user context from observability context
+                var isAuthenticated = context.User.Identity?.IsAuthenticated == true;
+                var isPremium = observabilityContext.IsPremium;
 
                 try
                 {
-                    _metricsService.RecordApiRequest(normalizedPath, method, statusCode, duration);
+                    // Record comprehensive request metrics
+                    metricsService.RecordRequest(
+                        normalizedPath,
+                        method,
+                        statusCode,
+                        durationMs,
+                        isAuthenticated,
+                        isPremium);
+
+                    // Log slow requests (warning threshold: 1s)
+                    if (durationMs > 1000)
+                    {
+                        _logger.LogWarning(
+                            "Slow request detected: {Method} {Endpoint} took {Duration}ms (Status: {StatusCode}, Premium: {IsPremium})",
+                            method,
+                            normalizedPath,
+                            durationMs,
+                            statusCode,
+                            isPremium?.ToString() ?? "unknown");
+                    }
+
+                    // Enrich OpenTelemetry span with additional attributes
+                    var activity = Activity.Current;
+                    if (activity != null)
+                    {
+                        activity.SetTag("http.status_code", statusCode);
+                        activity.SetTag("http.request_duration_ms", durationMs);
+                        activity.SetTag("user.authenticated", isAuthenticated);
+                        if (isPremium.HasValue)
+                        {
+                            activity.SetTag("user.is_premium", isPremium.Value);
+                        }
+
+                        // Mark activity as error if 5xx status code
+                        if (statusCode >= 500)
+                        {
+                            activity.SetStatus(ActivityStatusCode.Error, $"HTTP {statusCode}");
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {

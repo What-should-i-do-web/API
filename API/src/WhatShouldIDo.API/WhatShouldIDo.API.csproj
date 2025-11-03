@@ -39,6 +39,20 @@
 	  <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
 	  <PackageReference Include="Serilog.Sinks.Seq" Version="8.0.0" />
 	  <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
+
+		<!-- OpenTelemetry (aligned for .NET 9) -->
+		<PackageReference Include="OpenTelemetry" Version="1.13.1" />
+		<PackageReference Include="OpenTelemetry.Api" Version="1.13.1" />
+		<PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.13.1" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.13.0" />
+		<PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.13.0" />
+		<PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.13.1" />
+		<PackageReference Include="OpenTelemetry.Exporter.Prometheus.AspNetCore" Version="1.13.1-beta.1" />
+
+
+		<!-- Health Checks -->
+	  <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.0" />
+	  <PackageReference Include="AspNetCore.HealthChecks.UI.Client" Version="8.0.1" />
 	</ItemGroup>
 
 	

@@ -14,5 +14,6 @@ namespace WhatShouldIDo.Application.DTOs.Requests
         public float? Latitude { get; set; }
         public float? Longitude { get; set; }
         public int Radius { get; set; } = 3000; // varsayılan 3km
+        public string? SortBy { get; set; }
     }
 }

@@ -21,6 +21,17 @@ using WhatShouldIDo.Infrastructure.Interceptors;
 using StackExchange.Redis;
 using Serilog;
 using Npgsql.EntityFrameworkCore.PostgreSQL; // ✅ PostgreSQL provider
+using WhatShouldIDo.Application.Configuration;
+using WhatShouldIDo.Infrastructure.Quota;
+using WhatShouldIDo.API.Attributes;
+using OpenTelemetry.Trace;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using WhatShouldIDo.Infrastructure.Observability;
+using WhatShouldIDo.Infrastructure.Health;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using HealthChecks.UI.Client;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -132,10 +143,9 @@ builder.Services.AddScoped<ICacheService>(provider =>
 builder.Services.AddScoped<ICacheWarmingService, CacheWarmingService>();
 
 // -------------------------------------
-// Localization & Metrics
+// Localization
 // -------------------------------------
 builder.Services.AddAdvancedRateLimit(builder.Configuration);
-builder.Services.AddSingleton<IMetricsService, PrometheusMetricsService>();
 
 var supportedCultures = new[] { "en-US", "tr-TR", "es-ES", "fr-FR", "de-DE", "it-IT", "pt-PT", "ru-RU", "ja-JP", "ko-KR" };
 builder.Services.Configure<RequestLocalizationOptions>(options =>
@@ -151,6 +161,96 @@ builder.Services.Configure<RequestLocalizationOptions>(options =>
 builder.Services.AddLocalization(o => o.ResourcesPath = "Resources");
 builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ILocalizationService, LocalizationService>();
+
+// -------------------------------------
+// OpenTelemetry & Observability
+// -------------------------------------
+// Configure observability options
+builder.Services.Configure<ObservabilityOptions>(builder.Configuration.GetSection("Observability"));
+builder.Services.Configure<SecurityOptions>(builder.Configuration.GetSection("Security"));
+
+var observabilityOptions = builder.Configuration.GetSection("Observability").Get<ObservabilityOptions>()
+    ?? new ObservabilityOptions();
+
+// Register observability services
+builder.Services.AddScoped<IObservabilityContext, ObservabilityContext>();
+builder.Services.AddSingleton<IMetricsService, MetricsService>();
+
+// Configure OpenTelemetry
+if (observabilityOptions.Enabled)
+{
+    var resourceBuilder = ResourceBuilder.CreateDefault()
+        .AddService(
+            serviceName: observabilityOptions.ServiceName,
+            serviceVersion: observabilityOptions.ServiceVersion)
+        .AddAttributes(new Dictionary<string, object>
+        {
+            ["deployment.environment"] = builder.Environment.EnvironmentName,
+            ["host.name"] = Environment.MachineName
+        });
+
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService(
+            serviceName: observabilityOptions.ServiceName,
+            serviceVersion: observabilityOptions.ServiceVersion))
+        .WithTracing(tracing =>
+        {
+            tracing
+                .SetResourceBuilder(resourceBuilder)
+                .AddAspNetCoreInstrumentation(options =>
+                {
+                    options.RecordException = true;
+                    options.EnrichWithHttpRequest = (activity, httpRequest) =>
+                    {
+                        activity.SetTag("http.request.method", httpRequest.Method);
+                        activity.SetTag("http.request.path", httpRequest.Path);
+                    };
+                    options.EnrichWithHttpResponse = (activity, httpResponse) =>
+                    {
+                        activity.SetTag("http.response.status_code", httpResponse.StatusCode);
+                    };
+                })
+                .AddHttpClientInstrumentation()
+                .AddSource("WhatShouldIDo.API")
+                .AddSource("WhatShouldIDo.Redis")
+                .SetSampler(new TraceIdRatioBasedSampler(observabilityOptions.TraceSamplingRatio));
+
+            // Add OTLP exporter for traces (Tempo/Jaeger)
+            if (observabilityOptions.OtlpTracesEnabled && !string.IsNullOrEmpty(observabilityOptions.OtlpTracesEndpoint))
+            {
+                tracing.AddOtlpExporter(options =>
+                {
+                    options.Endpoint = new Uri(observabilityOptions.OtlpTracesEndpoint);
+                    options.Protocol = OpenTelemetry.Exporter.OtlpExportProtocol.Grpc;
+                });
+            }
+        })
+        .WithMetrics(metrics =>
+        {
+            metrics
+                .SetResourceBuilder(resourceBuilder)
+                .AddAspNetCoreInstrumentation()
+                .AddHttpClientInstrumentation()
+                .AddMeter("WhatShouldIDo.API");
+
+            // Add Prometheus exporter
+            if (observabilityOptions.PrometheusEnabled)
+            {
+                metrics.AddPrometheusExporter();
+            }
+        });
+
+    Log.Information("OpenTelemetry initialized: ServiceName={ServiceName}, TraceSampling={Sampling}%, Prometheus={Prometheus}, OTLP={OTLP}",
+        observabilityOptions.ServiceName,
+        observabilityOptions.TraceSamplingRatio * 100,
+        observabilityOptions.PrometheusEnabled,
+        observabilityOptions.OtlpTracesEnabled);
+}
+else
+{
+    // Fallback to basic metrics service without OpenTelemetry
+    Log.Warning("OpenTelemetry is disabled - using basic metrics only");
+}
 
 // -------------------------------------
 // Database (PostgreSQL only)
@@ -267,6 +367,68 @@ builder.Services.AddScoped<IPerformanceMonitoringService, PerformanceMonitoringS
 builder.Services.AddScoped<IDayPlanningService, DayPlanningService>();
 
 // -------------------------------------
+// Quota & Entitlement System
+// -------------------------------------
+// Configure quota options
+builder.Services.Configure<QuotaOptions>(builder.Configuration.GetSection("Feature:Quota"));
+builder.Services.AddOptions<QuotaOptions>()
+    .Bind(builder.Configuration.GetSection("Feature:Quota"))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// Register quota store based on configuration (with instrumentation)
+builder.Services.AddSingleton<IQuotaStore>(provider =>
+{
+    var options = provider.GetRequiredService<IOptions<QuotaOptions>>().Value;
+    var logger = provider.GetRequiredService<ILoggerFactory>();
+    var metricsService = provider.GetRequiredService<IMetricsService>();
+
+    // Create inner store based on backend configuration
+    IQuotaStore innerStore = options.StorageBackend.ToLowerInvariant() switch
+    {
+        "redis" => new RedisQuotaStore(
+            provider.GetRequiredService<IConnectionMultiplexer>(),
+            logger.CreateLogger<RedisQuotaStore>()),
+        "inmemory" => new InMemoryQuotaStore(logger.CreateLogger<InMemoryQuotaStore>()),
+        _ => new InMemoryQuotaStore(logger.CreateLogger<InMemoryQuotaStore>())
+    };
+
+    // Wrap with instrumentation for OpenTelemetry traces and metrics
+    return new InstrumentedRedisQuotaStore(
+        innerStore,
+        metricsService,
+        logger.CreateLogger<InstrumentedRedisQuotaStore>());
+});
+
+// Register quota services
+builder.Services.AddScoped<IEntitlementService, EntitlementService>();
+builder.Services.AddScoped<IQuotaService, QuotaService>();
+
+// Log effective quota configuration
+var quotaConfig = builder.Configuration.GetSection("Feature:Quota").Get<QuotaOptions>() ?? new QuotaOptions();
+Log.Information("Quota System Initialized: DefaultFreeQuota={DefaultFreeQuota}, DailyReset={DailyReset}, Backend={Backend}",
+    quotaConfig.DefaultFreeQuota, quotaConfig.DailyResetEnabled, quotaConfig.StorageBackend);
+
+// -------------------------------------
+// Health Checks
+// -------------------------------------
+builder.Services.AddHealthChecks()
+    .AddCheck<RedisHealthCheck>(
+        name: "redis",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "ready", "redis" })
+    .AddCheck<PostgresHealthCheck>(
+        name: "postgres",
+        failureStatus: HealthStatus.Unhealthy,
+        tags: new[] { "ready", "database" })
+    .AddCheck(
+        name: "self",
+        check: () => HealthCheckResult.Healthy("API is running"),
+        tags: new[] { "live" });
+
+Log.Information("Health checks registered: Redis, PostgreSQL, Self");
+
+// -------------------------------------
 // Controllers & Validation
 // -------------------------------------
 builder.Services.AddControllers();
@@ -293,9 +455,12 @@ using (var scope = app.Services.CreateScope())
     validator.ValidateConfiguration();
     validator.LogConfigurationSummary();
 }
-app.UseMiddleware<GlobalExceptionMiddleware>();
-app.UseMiddleware<MetricsMiddleware>();
-app.UseMiddleware<AdvancedRateLimitMiddleware>();
+
+// Middleware pipeline - ORDER MATTERS!
+app.UseMiddleware<GlobalExceptionMiddleware>();           // 1. Exception handling (outermost)
+app.UseMiddleware<CorrelationIdMiddleware>();             // 2. Correlation ID + W3C trace context
+app.UseMiddleware<MetricsMiddleware>();                   // 3. Metrics collection
+app.UseMiddleware<AdvancedRateLimitMiddleware>();         // 4. Rate limiting
 
 if (app.Environment.IsDevelopment())
 {
@@ -309,12 +474,80 @@ else
 }
 
 
-app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+// -------------------------------------
+// Health & Metrics Endpoints
+// -------------------------------------
+// Legacy simple health endpoint (backward compatibility)
+app.MapGet("/health", () => Results.Ok(new { status = "ok" }))
+    .AllowAnonymous()
+    .WithMetadata(new SkipQuotaAttribute())
+    .ExcludeFromDescription();
+
+// Readiness probe - checks all dependencies (Redis, Postgres)
+app.MapHealthChecks("/health/ready", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse,
+    AllowCachingResponses = false
+})
+.AllowAnonymous()
+.WithMetadata(new SkipQuotaAttribute())
+.WithName("Readiness")
+.WithTags("health");
+
+// Liveness probe - checks if the app is running (no dependency checks)
+app.MapHealthChecks("/health/live", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("live"),
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse,
+    AllowCachingResponses = false
+})
+.AllowAnonymous()
+.WithMetadata(new SkipQuotaAttribute())
+.WithName("Liveness")
+.WithTags("health");
+
+// Startup probe - same as readiness (for Kubernetes startup probe)
+app.MapHealthChecks("/health/startup", new HealthCheckOptions
+{
+    Predicate = check => check.Tags.Contains("ready"),
+    ResponseWriter = UIResponseWriter.WriteHealthCheckUIResponse,
+    AllowCachingResponses = false
+})
+.AllowAnonymous()
+.WithMetadata(new SkipQuotaAttribute())
+.WithName("Startup")
+.WithTags("health");
+
+// Prometheus metrics endpoint
+if (observabilityOptions.Enabled && observabilityOptions.PrometheusEnabled)
+{
+    app.MapPrometheusScrapingEndpoint(observabilityOptions.PrometheusEndpoint)
+        .AllowAnonymous()
+        .WithMetadata(new SkipQuotaAttribute())
+        .WithName("Metrics")
+        .ExcludeFromDescription();
+
+    Log.Information("Prometheus metrics endpoint available at {Endpoint}", observabilityOptions.PrometheusEndpoint);
+}
+
+// -------------------------------------
+// Request Pipeline
+// -------------------------------------
 app.UseRequestLocalization();
 app.UseAuthentication();
 app.UseApiRateLimit();
 app.UseAuthorization();
+app.UseMiddleware<EntitlementAndQuotaMiddleware>();  // After auth/authz
 app.MapControllers();
+
+Log.Information("WhatShouldIDo API started successfully");
+Log.Information("Health endpoints: /health/ready, /health/live, /health/startup");
+if (observabilityOptions.Enabled && observabilityOptions.PrometheusEnabled)
+{
+    Log.Information("Metrics endpoint: {Endpoint}", observabilityOptions.PrometheusEndpoint);
+}
+
 app.Run();
 
 public partial class Program { }

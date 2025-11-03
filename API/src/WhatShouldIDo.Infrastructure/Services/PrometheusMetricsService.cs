@@ -1,18 +1,8 @@
 using System.Diagnostics.Metrics;
+using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.Infrastructure.Services
 {
-    public interface IMetricsService
-    {
-        void RecordApiRequest(string endpoint, string method, int statusCode, double duration);
-        void RecordCacheHit(string cacheType);
-        void RecordCacheMiss(string cacheType);
-        void RecordDatabaseQuery(double duration, bool isSlowQuery);
-        void RecordRateLimitHit(string tier, string clientType);
-        void RecordPlaceSearch(string provider, int resultCount, double duration);
-        void IncrementActiveUsers();
-        void DecrementActiveUsers();
-    }
 
     public class PrometheusMetricsService : IMetricsService, IDisposable
     {
@@ -163,6 +153,61 @@ namespace WhatShouldIDo.Infrastructure.Services
         public void Dispose()
         {
             _meter?.Dispose();
+        }
+
+        public void RecordRequest(string endpoint, string method, int statusCode, double durationMs, bool isAuthenticated, bool? isPremium)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordQuotaRemaining(string userIdHash, int remaining)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordQuotaConsumed(int amount = 1)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordQuotaBlocked()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordEntitlementCheck(string source, string outcome)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordRedisOperation(string operation, double durationMs, bool success)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordRedisError(string operation)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordDatabaseRead(string outcome, double durationMs)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordWebhookEvent(string eventType, string outcome)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordWebhookVerificationFailure()
+        {
+            throw new NotImplementedException();
+        }
+
+        public void RecordRateLimitBlock(string endpoint)
+        {
+            throw new NotImplementedException();
         }
     }
 }
