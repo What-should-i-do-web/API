@@ -3,10 +3,10 @@ name: ci
 on:
   push:
     branches:
-      - '**'
+      - 'chore/simplify-cicd'
   pull_request:
     branches:
-      - '**'
+      - 'chore/simplify-cicd'
 
 permissions:
   contents: read
