@@ -12,17 +12,29 @@ namespace WhatShouldIDo.Infrastructure.Services
         private readonly ISmartSuggestionService _smartSuggestionService;
         private readonly IGeocodingService _geocodingService;
         private readonly ILogger<DayPlanningService> _logger;
+        private readonly IAIService? _aiService;
+        private readonly IPreferenceLearningService? _preferenceLearningService;
+        private readonly IMetricsService? _metricsService;
+        private readonly AI.DiversityHelper? _diversityHelper;
 
         public DayPlanningService(
             IPlacesProvider placesProvider,
             ISmartSuggestionService smartSuggestionService,
             IGeocodingService geocodingService,
-            ILogger<DayPlanningService> logger)
+            ILogger<DayPlanningService> logger,
+            IAIService? aiService = null,
+            IPreferenceLearningService? preferenceLearningService = null,
+            IMetricsService? metricsService = null,
+            AI.DiversityHelper? diversityHelper = null)
         {
             _placesProvider = placesProvider;
             _smartSuggestionService = smartSuggestionService;
             _geocodingService = geocodingService;
             _logger = logger;
+            _aiService = aiService;
+            _preferenceLearningService = preferenceLearningService;
+            _metricsService = metricsService;
+            _diversityHelper = diversityHelper;
         }
 
         public async Task<DayPlanDto> CreateDayPlanAsync(DayPlanRequest request, CancellationToken cancellationToken = default)
@@ -468,6 +480,254 @@ namespace WhatShouldIDo.Infrastructure.Services
         private static double ToRadians(double degrees)
         {
             return degrees * Math.PI / 180;
+        }
+
+        // ===== AI-Driven Route Generation =====
+
+        public async Task<DayPlanDto> CreateAIDrivenRouteAsync(
+            Guid userId,
+            DayPlanRequest request,
+            double diversityFactor = 0.2,
+            CancellationToken cancellationToken = default)
+        {
+            var startTime = DateTime.UtcNow;
+
+            try
+            {
+                // Check if AI services are available
+                if (_aiService == null || _preferenceLearningService == null || _diversityHelper == null)
+                {
+                    _logger.LogWarning("AI services not available, falling back to standard personalized plan");
+                    return await CreatePersonalizedDayPlanAsync(userId, request, cancellationToken);
+                }
+
+                _logger.LogInformation("Creating AI-driven route for user {UserId} with diversity factor {Epsilon}",
+                    userId, diversityFactor);
+
+                // Step 1: Get user embedding for personalization
+                var userEmbedding = await _preferenceLearningService.GetOrUpdateUserEmbeddingAsync(userId, cancellationToken);
+
+                if (userEmbedding == null)
+                {
+                    _logger.LogWarning("User {UserId} has no embedding, falling back to standard personalized plan", userId);
+                    return await CreatePersonalizedDayPlanAsync(userId, request, cancellationToken);
+                }
+
+                // Step 2: Get candidate places from all categories
+                var allPlaces = await GetCandidatePlacesAsync(request, cancellationToken);
+
+                if (allPlaces.Count == 0)
+                {
+                    _logger.LogWarning("No places found for location ({Lat}, {Lng})",
+                        request.Latitude, request.Longitude);
+                    throw new InvalidOperationException("No places found in the specified area");
+                }
+
+                _logger.LogInformation("Found {Count} candidate places", allPlaces.Count);
+
+                // Step 3: Generate embeddings for all places and score them
+                var scoredPlaces = await ScorePlacesWithEmbeddingsAsync(allPlaces, userEmbedding, cancellationToken);
+
+                // Step 4: Apply ε-greedy selection for diversity
+                var activityCount = CalculateActivityCount(request.StartTime, request.EndTime);
+                var selectedPlaces = _diversityHelper.EpsilonGreedySelection(
+                    scoredPlaces,
+                    diversityFactor,
+                    activityCount);
+
+                _logger.LogInformation("Selected {Count} places using ε-greedy (ε={Epsilon})",
+                    selectedPlaces.Count, diversityFactor);
+
+                // Step 5: Create optimized activities sequence
+                var activities = CreateOptimizedActivitySequence(selectedPlaces, request);
+
+                // Step 6: Build the AI-driven day plan
+                var dayPlan = new DayPlanDto
+                {
+                    Id = Guid.NewGuid(),
+                    Title = $"AI Personalized Plan for {request.Latitude:F2}, {request.Longitude:F2}",
+                    Description = $"AI-curated itinerary with {diversityFactor * 100:F0}% exploration factor",
+                    Date = DateTime.Today,
+                    EstimatedDuration = request.EndTime - request.StartTime,
+                    Budget = request.Budget ?? "medium",
+                    Activities = activities,
+                    TotalDistance = CalculateTotalDistance(activities),
+                    Transportation = request.Transportation ?? "walking",
+                    IsPersonalized = true,
+                    CreatedAt = DateTime.UtcNow
+                };
+
+                // Record metrics
+                var duration = (DateTime.UtcNow - startTime).TotalSeconds;
+                _metricsService?.RecordRouteGenerationDuration(duration);
+
+                _logger.LogInformation("Created AI-driven route with {ActivityCount} activities in {Duration:F2}s",
+                    activities.Count, duration);
+
+                return dayPlan;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error creating AI-driven route for user {UserId}", userId);
+
+                // Fallback to standard personalized plan
+                _logger.LogInformation("Falling back to standard personalized plan");
+                return await CreatePersonalizedDayPlanAsync(userId, request, cancellationToken);
+            }
+        }
+
+        private async Task<List<Place>> GetCandidatePlacesAsync(
+            DayPlanRequest request,
+            CancellationToken cancellationToken)
+        {
+            var allPlaces = new List<Place>();
+
+            // Get places from various categories
+            var categoryQueries = new List<string>
+            {
+                "museums historical sites monuments",
+                "restaurants cafes food dining",
+                "entertainment attractions parks",
+                "shopping markets stores",
+                "nightlife bars clubs"
+            };
+
+            foreach (var query in categoryQueries)
+            {
+                try
+                {
+                    var places = await _placesProvider.SearchByPromptAsync(
+                        query,
+                        request.Latitude,
+                        request.Longitude,
+                        null); // priceLevels parameter
+
+                    allPlaces.AddRange(places);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error fetching places for query: {Query}", query);
+                }
+            }
+
+            // Remove duplicates based on GooglePlaceId
+            allPlaces = allPlaces
+                .GroupBy(p => p.GooglePlaceId)
+                .Select(g => g.First())
+                .ToList();
+
+            // Apply user filters
+            if (request.PreferredCategories.Any())
+            {
+                allPlaces = allPlaces.Where(p =>
+                    request.PreferredCategories.Any(pref =>
+                        p.Category?.Contains(pref, StringComparison.OrdinalIgnoreCase) == true))
+                    .ToList();
+            }
+
+            if (request.AvoidedCategories.Any())
+            {
+                allPlaces = allPlaces.Where(p =>
+                    !request.AvoidedCategories.Any(avoid =>
+                        p.Category?.Contains(avoid, StringComparison.OrdinalIgnoreCase) == true))
+                    .ToList();
+            }
+
+            return allPlaces;
+        }
+
+        private async Task<List<(Place place, double score)>> ScorePlacesWithEmbeddingsAsync(
+            List<Place> places,
+            float[] userEmbedding,
+            CancellationToken cancellationToken)
+        {
+            if (_aiService == null)
+                throw new InvalidOperationException("AI service not available");
+
+            var scoredPlaces = new List<(Place place, double score)>();
+
+            foreach (var place in places)
+            {
+                try
+                {
+                    // Build place description for embedding
+                    var placeDescription = $"{place.Name}. {place.Category}. {place.Address}";
+
+                    // Generate place embedding
+                    var placeEmbedding = await _aiService.GetEmbeddingAsync(placeDescription, cancellationToken);
+
+                    if (placeEmbedding == null || placeEmbedding.Length == 0)
+                    {
+                        _logger.LogWarning("Failed to generate embedding for place: {PlaceName}", place.Name);
+                        continue;
+                    }
+
+                    // Calculate cosine similarity
+                    var similarity = AI.DiversityHelper.CosineSimilarity(userEmbedding, placeEmbedding);
+
+                    // Normalize to 0-1 range (cosine similarity is -1 to 1)
+                    var score = (similarity + 1.0) / 2.0;
+
+                    scoredPlaces.Add((place, score));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error scoring place: {PlaceName}", place.Name);
+                }
+            }
+
+            return scoredPlaces.OrderByDescending(x => x.score).ToList();
+        }
+
+        private List<PlannedActivityDto> CreateOptimizedActivitySequence(
+            List<(Place place, double score)> selectedPlaces,
+            DayPlanRequest request)
+        {
+            var activities = new List<PlannedActivityDto>();
+            var currentTime = request.StartTime;
+            var activityDuration = TimeSpan.FromHours(1.5); // Default 1.5 hours per activity
+
+            for (int i = 0; i < selectedPlaces.Count; i++)
+            {
+                var (place, score) = selectedPlaces[i];
+
+                // Add buffer time between activities
+                if (i > 0)
+                {
+                    currentTime = currentTime.Add(TimeSpan.FromMinutes(30)); // 30 min travel time
+                }
+
+                if (currentTime.Add(activityDuration) > request.EndTime)
+                    break;
+
+                activities.Add(new PlannedActivityDto
+                {
+                    Order = i + 1,
+                    ActivityType = place.Category ?? "attraction",
+                    PlaceName = place.Name,
+                    Category = place.Category ?? "attraction",
+                    Description = $"AI-selected based on your preferences",
+                    Reason = $"Similarity score: {score:F2}",
+                    StartTime = currentTime,
+                    EstimatedDuration = activityDuration,
+                    Score = score,
+                    Latitude = place.Latitude,
+                    Longitude = place.Longitude,
+                    PhotoUrl = place.PhotoUrl,
+                    Address = place.Address
+                });
+
+                currentTime = currentTime.Add(activityDuration);
+            }
+
+            return activities;
+        }
+
+        private static int CalculateActivityCount(TimeSpan startTime, TimeSpan endTime)
+        {
+            var totalHours = (endTime - startTime).TotalHours;
+            // Assume 1.5 hours per activity + 0.5 hours travel time = 2 hours per activity
+            return Math.Max(1, (int)(totalHours / 2.0));
         }
     }
 

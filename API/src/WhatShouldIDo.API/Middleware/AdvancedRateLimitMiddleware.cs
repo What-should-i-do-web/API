@@ -1,7 +1,7 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using System.Net;
-using WhatShouldIDo.Infrastructure.Caching;
+using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.API.Middleware
 {

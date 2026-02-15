@@ -33,6 +33,13 @@ namespace WhatShouldIDo.Domain.Entities
         // Learning from behavior
         public float PersonalizationScore { get; set; } = 0.0f; // How well we know the user (0-1)
         public DateTime LastPreferenceUpdate { get; set; } = DateTime.UtcNow;
+
+        // AI/ML Personalization (pgvector)
+        /// <summary>
+        /// User preference embedding vector (1536 dimensions for text-embedding-3-small)
+        /// Used for semantic similarity search and personalization
+        /// </summary>
+        public float[]? PreferenceEmbedding { get; set; }
         
         // Audit
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

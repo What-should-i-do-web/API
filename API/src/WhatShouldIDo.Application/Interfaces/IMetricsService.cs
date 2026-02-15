@@ -165,5 +165,62 @@ namespace WhatShouldIDo.Application.Interfaces
         /// Decrements the active users counter.
         /// </summary>
         void DecrementActiveUsers();
+
+        // ===== AI Provider Metrics =====
+
+        /// <summary>
+        /// Records AI provider selection.
+        /// Increments ai_provider_selected_total counter.
+        /// </summary>
+        /// <param name="providerName">Name of the selected provider (OpenAI, Ollama, etc.)</param>
+        void RecordAIProviderSelected(string providerName);
+
+        /// <summary>
+        /// Records AI API call latency.
+        /// Updates ai_call_latency_seconds histogram.
+        /// </summary>
+        /// <param name="providerName">Name of the provider</param>
+        /// <param name="operation">Operation name (chat, embedding, etc.)</param>
+        /// <param name="durationSeconds">Operation duration in seconds</param>
+        void RecordAICallLatency(string providerName, string operation, double durationSeconds);
+
+        /// <summary>
+        /// Increments successful AI API calls counter.
+        /// Increments ai_call_success_total counter.
+        /// </summary>
+        /// <param name="providerName">Name of the provider</param>
+        void IncrementAICallSuccess(string providerName);
+
+        /// <summary>
+        /// Increments failed AI API calls counter.
+        /// Increments ai_call_failures_total counter.
+        /// </summary>
+        /// <param name="providerName">Name of the provider</param>
+        /// <param name="reason">Failure reason (timeout, unauthorized, etc.)</param>
+        void IncrementAICallFailure(string providerName, string reason);
+
+        /// <summary>
+        /// Records AI route generation duration.
+        /// Updates route_generation_duration_seconds histogram.
+        /// </summary>
+        /// <param name="durationSeconds">Generation duration in seconds</param>
+        void RecordRouteGenerationDuration(double durationSeconds);
+
+        // ===== Generic Metrics Methods =====
+
+        /// <summary>
+        /// Records a histogram metric value with tags.
+        /// </summary>
+        /// <param name="name">Metric name</param>
+        /// <param name="value">Value to record</param>
+        /// <param name="tags">Optional tags for the metric</param>
+        void RecordHistogram(string name, double value, IEnumerable<KeyValuePair<string, object?>>? tags = null);
+
+        /// <summary>
+        /// Increments a counter metric.
+        /// </summary>
+        /// <param name="name">Metric name</param>
+        /// <param name="tags">Optional tags for the metric</param>
+        void IncrementCounter(string name, IEnumerable<KeyValuePair<string, object?>>? tags = null);
     }
 }

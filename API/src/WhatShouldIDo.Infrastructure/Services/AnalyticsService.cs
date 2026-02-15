@@ -1,8 +1,8 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using WhatShouldIDo.Application.DTOs.Response;
+using WhatShouldIDo.Application.Interfaces;
 using WhatShouldIDo.Application.Services;
-using WhatShouldIDo.Infrastructure.Caching;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 

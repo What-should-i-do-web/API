@@ -1,9 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using MediatR;
 using WhatShouldIDo.Application.DTOs.Requests;
 using WhatShouldIDo.Application.DTOs.Response;
+using WhatShouldIDo.Application.DTOs.AI;
 using WhatShouldIDo.Application.Interfaces;
+using WhatShouldIDo.Application.UseCases.Commands;
 
 namespace WhatShouldIDo.API.Controllers
 {
@@ -12,11 +15,16 @@ namespace WhatShouldIDo.API.Controllers
     public class DayPlanController : ControllerBase
     {
         private readonly IDayPlanningService _dayPlanningService;
+        private readonly IMediator _mediator;
         private readonly ILogger<DayPlanController> _logger;
 
-        public DayPlanController(IDayPlanningService dayPlanningService, ILogger<DayPlanController> logger)
+        public DayPlanController(
+            IDayPlanningService dayPlanningService,
+            IMediator mediator,
+            ILogger<DayPlanController> logger)
         {
             _dayPlanningService = dayPlanningService;
+            _mediator = mediator;
             _logger = logger;
         }
 
@@ -172,11 +180,105 @@ namespace WhatShouldIDo.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Generate an AI-driven daily itinerary with intelligent place selection and timing
+        /// Uses GPT-4 to create a personalized, optimized day plan based on preferences
+        /// </summary>
+        /// <remarks>
+        /// This endpoint leverages AI to:
+        /// - Intelligently select and order places based on your preferences
+        /// - Optimize timing and transportation between stops
+        /// - Balance activity types (sightseeing, meals, breaks)
+        /// - Consider budget, dietary restrictions, and accessibility
+        ///
+        /// Example request:
+        ///
+        ///     POST /api/dayplan/ai-generate
+        ///     {
+        ///       "location": "Istanbul, Turkey",
+        ///       "latitude": 41.0082,
+        ///       "longitude": 28.9784,
+        ///       "startTime": "09:00:00",
+        ///       "endTime": "20:00:00",
+        ///       "preferredActivities": ["cultural", "food", "shopping"],
+        ///       "budgetLevel": "medium",
+        ///       "maxStops": 6,
+        ///       "transportationMode": "walking",
+        ///       "saveAsRoute": true
+        ///     }
+        ///
+        /// </remarks>
+        /// <param name="request">Itinerary generation request</param>
+        /// <returns>AI-generated itinerary with detailed stops and reasoning</returns>
+        /// <response code="200">Returns the generated itinerary</response>
+        /// <response code="400">If the request is invalid</response>
+        /// <response code="401">If user is not authenticated</response>
+        /// <response code="500">If AI generation fails</response>
+        [HttpPost("ai-generate")]
+        [Authorize]
+        [ProducesResponseType(typeof(AIItinerary), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<AIItinerary>> GenerateAIItinerary([FromBody] AIItineraryRequest request)
+        {
+            try
+            {
+                var userId = GetCurrentUserId();
+
+                if (!userId.HasValue)
+                {
+                    return Unauthorized(new { error = "Authentication required for AI-driven itinerary generation" });
+                }
+
+                _logger.LogInformation("Generating AI itinerary for user {UserId} at {Location}",
+                    userId, request.Location);
+
+                // Create command
+                var command = new GenerateDailyItineraryCommand
+                {
+                    UserId = userId.Value,
+                    Location = request.Location,
+                    Latitude = request.Latitude,
+                    Longitude = request.Longitude,
+                    TargetDate = request.TargetDate,
+                    StartTime = request.StartTime,
+                    EndTime = request.EndTime,
+                    PreferredActivities = request.PreferredActivities,
+                    DietaryPreferences = request.DietaryPreferences,
+                    BudgetLevel = request.BudgetLevel,
+                    RadiusMeters = request.RadiusMeters,
+                    MaxStops = request.MaxStops,
+                    TransportationMode = request.TransportationMode,
+                    AdditionalPreferences = request.AdditionalPreferences,
+                    SaveAsRoute = true // Always save AI-generated itineraries as routes
+                };
+
+                // Execute via MediatR
+                var itinerary = await _mediator.Send(command);
+
+                _logger.LogInformation("Successfully generated AI itinerary with {StopCount} stops: {Title}",
+                    itinerary.Stops.Count, itinerary.Title);
+
+                return Ok(itinerary);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Failed to generate AI itinerary: {Message}", ex.Message);
+                return BadRequest(new { error = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating AI-driven itinerary");
+                return StatusCode(500, new { error = "AI-driven itinerary generation failed. Please try again." });
+            }
+        }
+
         private Guid? GetCurrentUserId()
         {
             var userIdClaim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value ??
                              User.FindFirst("sub")?.Value;
-            
+
             return Guid.TryParse(userIdClaim, out var userId) ? userId : null;
         }
     }

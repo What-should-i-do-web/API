@@ -258,6 +258,105 @@ groups:
           description: "{{ $value }} blocks/sec on {{ $labels.endpoint }}"
           dashboard: "https://grafana.local/d/api-golden-signals"
 
+  - name: provider-health
+    interval: 30s
+    rules:
+      - alert: PlaceSearchHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(place_search_duration_seconds_bucket[10m])) by (le, provider)
+          ) > 2.0
+        for: 5m
+        labels:
+          severity: warning
+          component: places
+        annotations:
+          summary: "Place search latency high for provider {{ $labels.provider }}"
+          description: "p95 place search latency is {{ $value }}s for {{ $labels.provider }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/provider-slow"
+
+      - alert: PlaceSearchHighErrorRate
+        expr: |
+          (
+            rate(place_search_errors_total[10m])
+            /
+            rate(place_searches_total[10m])
+          ) by (provider) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          component: places
+        annotations:
+          summary: "High error rate for place provider {{ $labels.provider }}"
+          description: "{{ $value | humanizePercentage }} error rate for {{ $labels.provider }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/provider-errors"
+
+      - alert: AIProviderHighLatency
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(ai_request_duration_seconds_bucket[10m])) by (le, provider)
+          ) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+          component: ai
+        annotations:
+          summary: "AI provider latency high for {{ $labels.provider }}"
+          description: "p95 AI request latency is {{ $value }}s for {{ $labels.provider }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/ai-provider-slow"
+
+      - alert: AIProviderHighErrorRate
+        expr: |
+          (
+            rate(ai_request_errors_total[10m])
+            /
+            rate(ai_requests_total[10m])
+          ) by (provider) > 0.10
+        for: 5m
+        labels:
+          severity: critical
+          component: ai
+        annotations:
+          summary: "High error rate for AI provider {{ $labels.provider }}"
+          description: "{{ $value | humanizePercentage }} error rate for {{ $labels.provider }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/ai-provider-errors"
+
+      - alert: CacheMissRateHigh
+        expr: |
+          (
+            rate(cache_misses_total[10m])
+            /
+            (rate(cache_hits_total[10m]) + rate(cache_misses_total[10m]))
+          ) by (layer) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: cache
+        annotations:
+          summary: "High cache miss rate for {{ $labels.layer }}"
+          description: "Cache miss rate is {{ $value | humanizePercentage }} for {{ $labels.layer }}"
+          dashboard: "https://grafana.local/d/persistence"
+          runbook: "https://docs.internal/runbooks/cache-miss-high"
+
+      - alert: SuggestionOrchestrationSlow
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(suggestion_orchestration_duration_seconds_bucket[10m])) by (le, intent)
+          ) > 3.0
+        for: 5m
+        labels:
+          severity: warning
+          component: suggestions
+        annotations:
+          summary: "Suggestion orchestration slow for intent {{ $labels.intent }}"
+          description: "p95 suggestion orchestration is {{ $value }}s for {{ $labels.intent }}"
+          dashboard: "https://grafana.local/d/api-golden-signals"
+          runbook: "https://docs.internal/runbooks/suggestions-slow"
+
   - name: infrastructure
     interval: 30s
     rules:

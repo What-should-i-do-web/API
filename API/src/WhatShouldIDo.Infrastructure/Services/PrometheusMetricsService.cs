@@ -17,6 +17,11 @@ namespace WhatShouldIDo.Infrastructure.Services
         private readonly Counter<long> _placeSearchesTotal;
         private readonly Histogram<double> _placeSearchDuration;
         private readonly UpDownCounter<long> _activeUsers;
+        private readonly Counter<long> _aiProviderSelectedTotal;
+        private readonly Counter<long> _aiCallSuccessTotal;
+        private readonly Counter<long> _aiCallFailuresTotal;
+        private readonly Histogram<double> _aiCallLatencySeconds;
+        private readonly Histogram<double> _routeGenerationDurationSeconds;
 
         public PrometheusMetricsService()
         {
@@ -69,6 +74,29 @@ namespace WhatShouldIDo.Infrastructure.Services
             _activeUsers = _meter.CreateUpDownCounter<long>(
                 "active_users",
                 description: "Number of active users");
+
+            // AI Provider Metrics
+            _aiProviderSelectedTotal = _meter.CreateCounter<long>(
+                "ai_provider_selected_total",
+                description: "Total number of AI provider selections");
+
+            _aiCallSuccessTotal = _meter.CreateCounter<long>(
+                "ai_call_success_total",
+                description: "Total number of successful AI API calls");
+
+            _aiCallFailuresTotal = _meter.CreateCounter<long>(
+                "ai_call_failures_total",
+                description: "Total number of failed AI API calls");
+
+            _aiCallLatencySeconds = _meter.CreateHistogram<double>(
+                "ai_call_latency_seconds",
+                unit: "s",
+                description: "AI API call latency in seconds");
+
+            _routeGenerationDurationSeconds = _meter.CreateHistogram<double>(
+                "route_generation_duration_seconds",
+                unit: "s",
+                description: "AI route generation duration in seconds");
         }
 
         public void RecordApiRequest(string endpoint, string method, int statusCode, double duration)
@@ -208,6 +236,81 @@ namespace WhatShouldIDo.Infrastructure.Services
         public void RecordRateLimitBlock(string endpoint)
         {
             throw new NotImplementedException();
+        }
+
+        public void RecordAIProviderSelected(string providerName)
+        {
+            var tags = new KeyValuePair<string, object?>[]
+            {
+                new("provider", providerName)
+            };
+
+            _aiProviderSelectedTotal.Add(1, tags);
+        }
+
+        public void RecordAICallLatency(string providerName, string operation, double durationSeconds)
+        {
+            var tags = new KeyValuePair<string, object?>[]
+            {
+                new("provider", providerName),
+                new("operation", operation)
+            };
+
+            _aiCallLatencySeconds.Record(durationSeconds, tags);
+        }
+
+        public void IncrementAICallSuccess(string providerName)
+        {
+            var tags = new KeyValuePair<string, object?>[]
+            {
+                new("provider", providerName)
+            };
+
+            _aiCallSuccessTotal.Add(1, tags);
+        }
+
+        public void IncrementAICallFailure(string providerName, string reason)
+        {
+            var tags = new KeyValuePair<string, object?>[]
+            {
+                new("provider", providerName),
+                new("reason", reason)
+            };
+
+            _aiCallFailuresTotal.Add(1, tags);
+        }
+
+        public void RecordRouteGenerationDuration(double durationSeconds)
+        {
+            _routeGenerationDurationSeconds.Record(durationSeconds);
+        }
+
+        public void RecordHistogram(string name, double value, IEnumerable<KeyValuePair<string, object?>>? tags = null)
+        {
+            // Use the generic histogram for dynamic metrics
+            var histogram = _meter.CreateHistogram<double>(name);
+            if (tags != null)
+            {
+                histogram.Record(value, tags.ToArray());
+            }
+            else
+            {
+                histogram.Record(value);
+            }
+        }
+
+        public void IncrementCounter(string name, IEnumerable<KeyValuePair<string, object?>>? tags = null)
+        {
+            // Use dynamic counter for generic metrics
+            var counter = _meter.CreateCounter<long>(name);
+            if (tags != null)
+            {
+                counter.Add(1, tags.ToArray());
+            }
+            else
+            {
+                counter.Add(1);
+            }
         }
     }
 }

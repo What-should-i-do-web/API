@@ -289,6 +289,7 @@ builder.Services.AddDbContext<WhatShouldIDoDbContext>((provider, options) =>
 builder.Services.AddScoped(typeof(IGenericRepository<>), typeof(GenericRepository<>));
 builder.Services.AddScoped<IRouteRepository, RouteRepository>();
 builder.Services.AddScoped<IUserRepository, UserRepository>();
+builder.Services.AddScoped<IUserHistoryRepository, UserHistoryRepository>(); // Surprise Me feature
 builder.Services.AddScoped<IRouteService, RouteService>();
 builder.Services.AddScoped<IPoiRepository, PoiRepository>();
 builder.Services.AddScoped<IRoutePointRepository, RoutePointRepository>();
@@ -303,6 +304,92 @@ builder.Services.AddScoped<ISmartSuggestionService, SmartSuggestionService>();
 builder.Services.AddHttpClient<OpenWeatherService>();
 builder.Services.AddScoped<IWeatherService, OpenWeatherService>();
 builder.Services.AddScoped<IContextEngine, ContextEngine>();
+
+// -------------------------------------
+// Subscription System (Mobile IAP Ready)
+// -------------------------------------
+// Configure subscription options
+builder.Services.Configure<SubscriptionOptions>(builder.Configuration.GetSection("Feature:Subscription"));
+builder.Services.AddOptions<SubscriptionOptions>()
+    .Bind(builder.Configuration.GetSection("Feature:Subscription"))
+    .ValidateDataAnnotations()
+    .ValidateOnStart();
+
+// Register IClock for testable time handling
+builder.Services.AddSingleton<IClock>(WhatShouldIDo.Infrastructure.Services.SystemClock.Instance);
+
+// Register subscription repository
+builder.Services.AddScoped<ISubscriptionRepository, SubscriptionRepository>();
+
+// Register receipt verifier based on configuration
+builder.Services.AddScoped<IReceiptVerifier>(provider =>
+{
+    var options = provider.GetRequiredService<IOptions<SubscriptionOptions>>().Value;
+    var logger = provider.GetRequiredService<ILoggerFactory>();
+    var env = provider.GetRequiredService<IHostEnvironment>();
+    var clock = provider.GetRequiredService<IClock>();
+
+    // If verification is disabled, return disabled verifier
+    if (!options.VerificationEnabled)
+    {
+        return new WhatShouldIDo.Infrastructure.Services.Subscription.DisabledReceiptVerifier();
+    }
+
+    // In development with AllowDevTestReceipts, use dev test verifier
+    if (env.IsDevelopment() && options.AllowDevTestReceipts)
+    {
+        return new WhatShouldIDo.Infrastructure.Services.Subscription.DevTestReceiptVerifier(
+            provider.GetRequiredService<IOptions<SubscriptionOptions>>(),
+            logger.CreateLogger<WhatShouldIDo.Infrastructure.Services.Subscription.DevTestReceiptVerifier>(),
+            clock);
+    }
+
+    // Production: Return disabled verifier until real Apple/Google SDKs are integrated
+    return new WhatShouldIDo.Infrastructure.Services.Subscription.DisabledReceiptVerifier();
+});
+
+// Register subscription service
+builder.Services.AddScoped<ISubscriptionService, WhatShouldIDo.Infrastructure.Services.Subscription.SubscriptionService>();
+
+// Log subscription configuration
+var subscriptionConfig = builder.Configuration.GetSection("Feature:Subscription").Get<SubscriptionOptions>() ?? new SubscriptionOptions();
+Log.Information("Subscription System Initialized: VerificationEnabled={VerificationEnabled}, AllowDevTestReceipts={AllowDevTestReceipts}",
+    subscriptionConfig.VerificationEnabled, subscriptionConfig.AllowDevTestReceipts);
+
+// -------------------------------------
+// Taste Profile System
+// -------------------------------------
+// Configure taste quiz options
+builder.Services.Configure<TasteQuizOptions>(builder.Configuration.GetSection("Feature:TasteQuiz"));
+builder.Services.Configure<RecommendationScoringOptions>(builder.Configuration.GetSection("Feature:RecommendationScoring"));
+
+// Register repositories
+builder.Services.AddScoped<ITasteProfileRepository, WhatShouldIDo.Infrastructure.Repositories.TasteProfileRepository>();
+builder.Services.AddScoped<ITasteEventRepository, WhatShouldIDo.Infrastructure.Repositories.TasteEventRepository>();
+builder.Services.AddScoped<ITasteDraftStore, WhatShouldIDo.Infrastructure.Repositories.TasteDraftStore>();
+
+// Register scoring services
+builder.Services.AddScoped<IPlaceCategoryMapper, PlaceCategoryMapper>();
+builder.Services.AddScoped<IImplicitScorer, ImplicitScorer>();
+builder.Services.AddScoped<IExplicitScorer, ExplicitScorer>();
+builder.Services.AddScoped<IExplainabilityService, ExplainabilityService>();
+builder.Services.AddScoped<IHybridScorer, HybridScorer>();
+
+// Register business services
+builder.Services.AddScoped<ITasteQuizService, TasteQuizService>();
+builder.Services.AddScoped<ITasteProfileService, TasteProfileService>();
+
+// Log taste profile configuration
+var tasteQuizConfig = builder.Configuration.GetSection("Feature:TasteQuiz").Get<TasteQuizOptions>() ?? new TasteQuizOptions();
+var scoringConfig = builder.Configuration.GetSection("Feature:RecommendationScoring").Get<RecommendationScoringOptions>() ?? new RecommendationScoringOptions();
+Log.Information("Taste Profile System Initialized: QuizVersion={Version}, DraftTtl={DraftTtl}h, ScoringWeights=(I:{Implicit}, E:{Explicit}, N:{Novelty}, C:{Context}, Q:{Quality})",
+    tasteQuizConfig.Version,
+    tasteQuizConfig.DraftTtlHours,
+    scoringConfig.ImplicitWeight,
+    scoringConfig.ExplicitWeight,
+    scoringConfig.NoveltyWeight,
+    scoringConfig.ContextWeight,
+    scoringConfig.QualityWeight);
 
 // -------------------------------------
 // Hybrid Services
@@ -366,6 +453,16 @@ builder.Services.AddScoped<IAnalyticsService, AnalyticsService>();
 builder.Services.AddScoped<IPerformanceMonitoringService, PerformanceMonitoringService>();
 builder.Services.AddScoped<IDayPlanningService, DayPlanningService>();
 
+// Intent-First Suggestion Policy
+builder.Services.AddScoped<ISuggestionPolicy, SuggestionPolicyService>();
+
+// Route Optimization & Directions Services
+builder.Services.Configure<GoogleMapsOptions>(builder.Configuration.GetSection("GoogleMaps"));
+builder.Services.AddHttpClient<IDirectionsService, GoogleDirectionsService>();
+builder.Services.AddScoped<IRouteOptimizationService, RouteOptimizationService>();
+
+Log.Information("Route optimization services registered: Google Directions, TSP Solver");
+
 // -------------------------------------
 // Quota & Entitlement System
 // -------------------------------------
@@ -410,6 +507,59 @@ Log.Information("Quota System Initialized: DefaultFreeQuota={DefaultFreeQuota}, 
     quotaConfig.DefaultFreeQuota, quotaConfig.DailyResetEnabled, quotaConfig.StorageBackend);
 
 // -------------------------------------
+// MediatR Configuration (CQRS Pattern)
+// -------------------------------------
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.RegisterServicesFromAssembly(typeof(WhatShouldIDo.Application.UseCases.Queries.SearchPlacesQuery).Assembly);
+});
+
+Log.Information("MediatR registered with application handlers");
+
+// -------------------------------------
+// AI Configuration & Services
+// -------------------------------------
+builder.Services.Configure<AIOptions>(builder.Configuration.GetSection("AI"));
+
+// Register AI providers
+builder.Services.AddHttpClient<WhatShouldIDo.Infrastructure.Services.AI.OpenAIProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
+
+builder.Services.AddHttpClient<WhatShouldIDo.Infrastructure.Services.AI.HuggingFaceProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(60); // HF models can be slower
+});
+
+builder.Services.AddHttpClient<WhatShouldIDo.Infrastructure.Services.AI.OllamaProvider>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(120); // Local models can be slow on first run
+});
+
+builder.Services.AddSingleton<WhatShouldIDo.Infrastructure.Services.AI.NoOpAIProvider>();
+builder.Services.AddSingleton<WhatShouldIDo.Infrastructure.Services.AI.AIProviderFactory>();
+
+// Register AI service with provider factory
+builder.Services.AddScoped<IAIService>(provider =>
+{
+    var factory = provider.GetRequiredService<WhatShouldIDo.Infrastructure.Services.AI.AIProviderFactory>();
+    var cacheService = provider.GetService<ICacheService>();
+    var logger = provider.GetRequiredService<ILogger<WhatShouldIDo.Infrastructure.Services.AI.AIService>>();
+    var options = provider.GetRequiredService<IOptions<AIOptions>>();
+
+    var primaryProvider = factory.CreatePrimaryProvider();
+    var fallbackProvider = factory.CreateFallbackProvider();
+
+    return new WhatShouldIDo.Infrastructure.Services.AI.AIService(primaryProvider, options, logger, cacheService, fallbackProvider);
+});
+
+var aiProviderName = builder.Configuration["AI:Provider"] ?? "OpenAI";
+var aiEnabled = builder.Configuration.GetValue<bool>("AI:Enabled", true);
+
+Log.Information("AI service configured: Enabled={Enabled}, Provider={Provider}", aiEnabled, aiProviderName);
+
+// -------------------------------------
 // Health Checks
 // -------------------------------------
 builder.Services.AddHealthChecks()
@@ -442,8 +592,62 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateRouteRequestValidator
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
-    c.SwaggerDoc("v1", new OpenApiInfo { Title = "WhatShouldIDo API", Version = "v1" });
+    c.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "WhatShouldIDo API",
+        Version = "v1"
+    });
+
+    // 🔑 DTO name collision fix (API vs Application)
+    c.CustomSchemaIds(type => type.FullName);
 });
+
+
+// -------------------------------------
+// Background Jobs
+// -------------------------------------
+// Register AI-related services
+builder.Services.AddScoped<WhatShouldIDo.Infrastructure.Services.AI.DiversityHelper>();
+
+// Configure background job options
+builder.Services.Configure<WhatShouldIDo.Infrastructure.BackgroundJobs.PreferenceUpdateJobOptions>(
+    builder.Configuration.GetSection("BackgroundJobs:PreferenceUpdate"));
+
+builder.Services.Configure<WhatShouldIDo.Infrastructure.BackgroundJobs.UserActionCleanupJobOptions>(
+    builder.Configuration.GetSection("BackgroundJobs:UserActionCleanup"));
+
+// Register background jobs as hosted services (only if enabled)
+var preferenceUpdateOptions = builder.Configuration
+    .GetSection("BackgroundJobs:PreferenceUpdate")
+    .Get<WhatShouldIDo.Infrastructure.BackgroundJobs.PreferenceUpdateJobOptions>()
+    ?? new WhatShouldIDo.Infrastructure.BackgroundJobs.PreferenceUpdateJobOptions();
+
+var userActionCleanupOptions = builder.Configuration
+    .GetSection("BackgroundJobs:UserActionCleanup")
+    .Get<WhatShouldIDo.Infrastructure.BackgroundJobs.UserActionCleanupJobOptions>()
+    ?? new WhatShouldIDo.Infrastructure.BackgroundJobs.UserActionCleanupJobOptions();
+
+if (preferenceUpdateOptions.Enabled)
+{
+    builder.Services.AddHostedService<WhatShouldIDo.Infrastructure.BackgroundJobs.PreferenceUpdateJob>();
+    Log.Information("PreferenceUpdateJob enabled: Interval={Interval}min, BatchSize={BatchSize}",
+        preferenceUpdateOptions.IntervalMinutes, preferenceUpdateOptions.BatchSize);
+}
+else
+{
+    Log.Information("PreferenceUpdateJob is disabled");
+}
+
+if (userActionCleanupOptions.Enabled)
+{
+    builder.Services.AddHostedService<WhatShouldIDo.Infrastructure.BackgroundJobs.UserActionCleanupJob>();
+    Log.Information("UserActionCleanupJob enabled: Interval={Interval}h, RetentionDays={Days}",
+        userActionCleanupOptions.IntervalHours, userActionCleanupOptions.RetentionDays);
+}
+else
+{
+    Log.Information("UserActionCleanupJob is disabled");
+}
 
 // -------------------------------------
 // Build & Pipeline

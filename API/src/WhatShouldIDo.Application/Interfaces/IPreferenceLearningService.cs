@@ -1,5 +1,5 @@
 using WhatShouldIDo.Domain.Entities;
-
+using WhatShouldIDo.Application.Models;
 namespace WhatShouldIDo.Application.Interfaces
 {
     public interface IPreferenceLearningService
@@ -11,19 +11,36 @@ namespace WhatShouldIDo.Application.Interfaces
         Task<List<string>> GetRecommendedActivitiesAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<string> GetOptimalTimePreferenceAsync(Guid userId, CancellationToken cancellationToken = default);
         Task<Dictionary<string, float>> GetContextualPreferencesAsync(Guid userId, string timeOfDay, string dayOfWeek, CancellationToken cancellationToken = default);
+
+        // ===== AI/ML Embedding Methods =====
+
+        /// <summary>
+        /// Gets cached user embedding or generates a new one if not available or stale.
+        /// Returns null if user has insufficient data for embedding generation.
+        /// </summary>
+        Task<float[]?> GetOrUpdateUserEmbeddingAsync(Guid userId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Forces regeneration of user preference embedding based on current actions and preferences.
+        /// Uses AI to generate a semantic embedding vector for personalization.
+        /// </summary>
+        Task<float[]> RegenerateUserEmbeddingAsync(Guid userId, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Tracks a user action (view, favorite, visit, rate, etc.) for learning purposes.
+        /// These actions are later processed to update user embeddings.
+        /// </summary>
+        Task TrackUserActionAsync(
+            Guid userId,
+            string placeId,
+            string actionType,
+            string? placeName = null,
+            string? category = null,
+            float? rating = null,
+            int? durationSeconds = null,
+            string? metadata = null,
+            CancellationToken cancellationToken = default);
     }
 
-    public class UserPreferences
-    {
-        public List<string> FavoriteCuisines { get; set; } = new();
-        public List<string> FavoriteActivityTypes { get; set; } = new();
-        public List<string> AvoidedCuisines { get; set; } = new();
-        public List<string> AvoidedActivityTypes { get; set; } = new();
-        public Dictionary<string, float> TimePreferences { get; set; } = new(); // "morning": 0.8
-        public Dictionary<string, float> DayPreferences { get; set; } = new(); // "weekend": 0.9
-        public string PreferredBudgetRange { get; set; } = "medium";
-        public int PreferredRadius { get; set; } = 3000;
-        public float PersonalizationConfidence { get; set; } = 0.0f;
-        public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
-    }
+   
 }

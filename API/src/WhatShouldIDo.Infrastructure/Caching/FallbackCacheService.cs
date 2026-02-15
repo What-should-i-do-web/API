@@ -2,6 +2,7 @@ using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using System.Text.Json;
+using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.Infrastructure.Caching
 {
@@ -80,6 +81,75 @@ namespace WhatShouldIDo.Infrastructure.Caching
             _logger.LogInformation("💾 Memory cache set: {key} (TTL: {ttl} min)", key, ttl.TotalMinutes);
 
             return result;
+        }
+
+        public async Task<T?> GetAsync<T>(string key) where T : class
+        {
+            if (_redisAvailable)
+            {
+                try
+                {
+                    var cached = await _distributedCache.GetStringAsync(key);
+                    if (cached != null)
+                    {
+                        return JsonSerializer.Deserialize<T>(cached);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Redis get failed");
+                    _redisAvailable = false;
+                }
+            }
+
+            _memoryCache.TryGetValue(key, out T? cachedResult);
+            return cachedResult;
+        }
+
+        public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+        {
+            if (_redisAvailable)
+            {
+                try
+                {
+                    var json = JsonSerializer.Serialize(value);
+                    var options = new DistributedCacheEntryOptions
+                    {
+                        AbsoluteExpirationRelativeToNow = expiration
+                    };
+                    await _distributedCache.SetStringAsync(key, json, options);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Redis set failed");
+                    _redisAvailable = false;
+                }
+            }
+
+            var memOptions = new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = expiration
+            };
+            _memoryCache.Set(key, value, memOptions);
+        }
+
+        public async Task<bool> ExistsAsync(string key)
+        {
+            if (_redisAvailable)
+            {
+                try
+                {
+                    var cached = await _distributedCache.GetStringAsync(key);
+                    if (cached != null) return true;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Redis exists check failed");
+                    _redisAvailable = false;
+                }
+            }
+
+            return _memoryCache.TryGetValue(key, out _);
         }
 
         public async Task RemoveAsync(string key)

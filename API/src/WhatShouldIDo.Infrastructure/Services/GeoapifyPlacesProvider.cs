@@ -1,8 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
+using WhatShouldIDo.Application.DTOs.Response;
 using WhatShouldIDo.Application.Interfaces;
 using WhatShouldIDo.Domain.Entities;
 using Microsoft.Extensions.Configuration;
@@ -37,9 +39,12 @@ namespace WhatShouldIDo.Infrastructure.Services
             {
                 var props = feature.GetProperty("properties");
 
+                var placeId = props.TryGetProperty("place_id", out var placeIdProp) ? placeIdProp.GetString() : null;
+
                 results.Add(new Place
                 {
                     Id = Guid.NewGuid(),
+                    GooglePlaceId = placeId ?? Guid.NewGuid().ToString(),
                     Name = props.GetProperty("name").GetString(),
                     Latitude = props.GetProperty("lat").GetSingle(),
                     Longitude = props.GetProperty("lon").GetSingle(),
@@ -57,6 +62,36 @@ namespace WhatShouldIDo.Infrastructure.Services
         public Task<List<Place>> SearchByPromptAsync(string textQuery, float lat, float lng, string[] priceLevels = null)
         {
             throw new NotImplementedException();
+        }
+
+        // New AI-powered search methods
+        public async Task<List<PlaceDto>> SearchNearbyAsync(double lat, double lng, int radius, string? types, int maxResults)
+        {
+            var places = await GetNearbyPlacesAsync((float)lat, (float)lng, radius, types);
+            return places.Take(maxResults).Select(MapToDto).ToList();
+        }
+
+        public Task<PlaceDto?> GetPlaceDetailsAsync(string placeId)
+        {
+            // Not implemented for Geoapify
+            return Task.FromResult<PlaceDto?>(null);
+        }
+
+        private PlaceDto MapToDto(Place place)
+        {
+            return new PlaceDto
+            {
+                PlaceId = place.GooglePlaceId,
+                Name = place.Name ?? string.Empty,
+                Description = null,
+                Address = place.Address,
+                Latitude = (double)place.Latitude,
+                Longitude = (double)place.Longitude,
+                Types = place.Category?.Split(',').ToList(),
+                Rating = double.TryParse(place.Rating, out var rating) ? rating : null,
+                Source = place.Source,
+                Distance = null
+            };
         }
 
         private string MapKeywordToCategory(string keyword)

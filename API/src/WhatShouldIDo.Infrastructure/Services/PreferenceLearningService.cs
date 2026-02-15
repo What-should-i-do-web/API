@@ -4,6 +4,7 @@ using WhatShouldIDo.Application.Interfaces;
 using WhatShouldIDo.Domain.Entities;
 using WhatShouldIDo.Infrastructure.Data;
 using System.Text.Json;
+using WhatShouldIDo.Application.Models;
 
 namespace WhatShouldIDo.Infrastructure.Services
 {
@@ -11,11 +12,16 @@ namespace WhatShouldIDo.Infrastructure.Services
     {
         private readonly WhatShouldIDoDbContext _context;
         private readonly ILogger<PreferenceLearningService> _logger;
+        private readonly IAIService _aiService;
 
-        public PreferenceLearningService(WhatShouldIDoDbContext context, ILogger<PreferenceLearningService> logger)
+        public PreferenceLearningService(
+            WhatShouldIDoDbContext context,
+            ILogger<PreferenceLearningService> logger,
+            IAIService aiService)
         {
             _context = context;
             _logger = logger;
+            _aiService = aiService;
         }
 
         public async Task UpdateUserPreferencesAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -224,7 +230,7 @@ namespace WhatShouldIDo.Infrastructure.Services
                 // Day-based preferences
                 var isWeekend = dayOfWeek == "saturday" || dayOfWeek == "sunday";
                 var dayType = isWeekend ? "weekend" : "weekday";
-                var dayVisits = visits.Where(v => 
+                var dayVisits = visits.Where(v =>
                     (isWeekend && (v.DayOfWeek == "saturday" || v.DayOfWeek == "sunday")) ||
                     (!isWeekend && v.DayOfWeek != "saturday" && v.DayOfWeek != "sunday")
                 ).ToList();
@@ -242,6 +248,208 @@ namespace WhatShouldIDo.Infrastructure.Services
                 _logger.LogError(ex, "Error getting contextual preferences for user {UserId}", userId);
                 return new Dictionary<string, float>();
             }
+        }
+
+        // ===== AI/ML Embedding Methods =====
+
+        public async Task<float[]?> GetOrUpdateUserEmbeddingAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var profile = await _context.UserProfiles
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+
+                if (profile == null)
+                {
+                    _logger.LogWarning("User profile not found for user {UserId}", userId);
+                    return null;
+                }
+
+                // Check if embedding exists and is recent (updated within 7 days)
+                if (profile.PreferenceEmbedding != null &&
+                    profile.PreferenceEmbedding.Length > 0 &&
+                    profile.LastPreferenceUpdate >= DateTime.UtcNow.AddDays(-7))
+                {
+                    _logger.LogDebug("Using cached embedding for user {UserId}", userId);
+                    return profile.PreferenceEmbedding;
+                }
+
+                // Check if user has enough data for meaningful embedding
+                var actionCount = await _context.UserActions
+                    .CountAsync(a => a.UserId == userId, cancellationToken);
+
+                if (actionCount < 5)
+                {
+                    _logger.LogDebug("Insufficient data for user {UserId} (only {Count} actions)", userId, actionCount);
+                    return null;
+                }
+
+                // Generate new embedding
+                _logger.LogInformation("Generating new embedding for user {UserId}", userId);
+                return await RegenerateUserEmbeddingAsync(userId, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error getting/updating embedding for user {UserId}", userId);
+                return null;
+            }
+        }
+
+        public async Task<float[]> RegenerateUserEmbeddingAsync(Guid userId, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                // Get user preferences and actions
+                var preferences = await GetLearnedPreferencesAsync(userId, cancellationToken);
+
+                // Get recent user actions (last 100)
+                var actions = await _context.UserActions
+                    .AsNoTracking()
+                    .Where(a => a.UserId == userId)
+                    .OrderByDescending(a => a.ActionTimestamp)
+                    .Take(100)
+                    .ToListAsync(cancellationToken);
+
+                // Build a descriptive text summary of user preferences
+                var preferenceText = BuildPreferenceText(preferences, actions);
+
+                _logger.LogDebug("Generating embedding for user {UserId} with text: {Text}",
+                    userId, preferenceText.Substring(0, Math.Min(100, preferenceText.Length)));
+
+                // Generate embedding using AI service
+                var embedding = await _aiService.GetEmbeddingAsync(preferenceText, cancellationToken);
+
+                if (embedding == null || embedding.Length == 0)
+                {
+                    throw new InvalidOperationException("Failed to generate embedding");
+                }
+
+                // Save embedding to database
+                var profile = await _context.UserProfiles
+                    .FirstOrDefaultAsync(p => p.UserId == userId, cancellationToken);
+
+                if (profile != null)
+                {
+                    profile.PreferenceEmbedding = embedding;
+                    profile.LastPreferenceUpdate = DateTime.UtcNow;
+                    await _context.SaveChangesAsync(cancellationToken);
+
+                    _logger.LogInformation("Successfully updated embedding for user {UserId} ({Dimensions} dimensions)",
+                        userId, embedding.Length);
+                }
+
+                return embedding;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error regenerating embedding for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        public async Task TrackUserActionAsync(
+            Guid userId,
+            string placeId,
+            string actionType,
+            string? placeName = null,
+            string? category = null,
+            float? rating = null,
+            int? durationSeconds = null,
+            string? metadata = null,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                var action = new UserAction
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    PlaceId = placeId,
+                    PlaceName = placeName,
+                    Category = category,
+                    ActionType = actionType,
+                    Rating = rating,
+                    DurationSeconds = durationSeconds,
+                    Metadata = metadata,
+                    ActionTimestamp = DateTime.UtcNow,
+                    IsProcessed = false
+                };
+
+                _context.UserActions.Add(action);
+                await _context.SaveChangesAsync(cancellationToken);
+
+                _logger.LogDebug("Tracked {ActionType} action for user {UserId} on place {PlaceId}",
+                    actionType, userId, placeId);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error tracking user action for user {UserId}", userId);
+            }
+        }
+
+        // ===== Private Helper Methods =====
+
+        private string BuildPreferenceText(UserPreferences preferences, List<UserAction> actions)
+        {
+            var parts = new List<string>();
+
+            // Add favorite cuisines
+            if (preferences.FavoriteCuisines.Any())
+            {
+                parts.Add($"Favorite cuisines: {string.Join(", ", preferences.FavoriteCuisines)}");
+            }
+
+            // Add favorite activities
+            if (preferences.FavoriteActivityTypes.Any())
+            {
+                parts.Add($"Favorite activities: {string.Join(", ", preferences.FavoriteActivityTypes)}");
+            }
+
+            // Add avoided types
+            if (preferences.AvoidedActivityTypes.Any())
+            {
+                parts.Add($"Avoids: {string.Join(", ", preferences.AvoidedActivityTypes)}");
+            }
+
+            // Add budget preference
+            parts.Add($"Budget preference: {preferences.PreferredBudgetRange}");
+
+            // Add time preferences
+            if (preferences.TimePreferences.Any())
+            {
+                var topTime = preferences.TimePreferences
+                    .OrderByDescending(kvp => kvp.Value)
+                    .First();
+                parts.Add($"Prefers {topTime.Key} activities");
+            }
+
+            // Add recent highly-rated places
+            var favoriteActions = actions
+                .Where(a => a.Rating.HasValue && a.Rating.Value >= 4.0f && !string.IsNullOrEmpty(a.PlaceName))
+                .Take(10)
+                .Select(a => a.PlaceName!)
+                .Distinct();
+
+            if (favoriteActions.Any())
+            {
+                parts.Add($"Liked places: {string.Join(", ", favoriteActions)}");
+            }
+
+            // Add categories from actions
+            var frequentCategories = actions
+                .Where(a => !string.IsNullOrEmpty(a.Category))
+                .GroupBy(a => a.Category!)
+                .OrderByDescending(g => g.Count())
+                .Take(5)
+                .Select(g => g.Key);
+
+            if (frequentCategories.Any())
+            {
+                parts.Add($"Frequently visits: {string.Join(", ", frequentCategories)}");
+            }
+
+            return string.Join(". ", parts) + ".";
         }
 
         private async Task<UserPreferences> LearnFromVisitsAsync(Guid userId, List<UserVisit> visits, CancellationToken cancellationToken)

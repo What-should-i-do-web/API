@@ -5,6 +5,7 @@ using System;
 using System.Text;
 using System.Text.Json;
 using WhatShouldIDo.Application.Common;
+using WhatShouldIDo.Application.DTOs.Response;
 using WhatShouldIDo.Application.Interfaces;
 using WhatShouldIDo.Domain.Entities;
 using WhatShouldIDo.Infrastructure.Caching;
@@ -60,7 +61,7 @@ public class GooglePlacesProvider : IPlacesProvider
             
             var request = new HttpRequestMessage(HttpMethod.Post, Base_URL_Places);
             request.Headers.Add("X-Goog-Api-Key", _apiKey);
-            request.Headers.Add("X-Goog-FieldMask", "places.displayName,places.location,places.rating,places.types,places.photos");
+            request.Headers.Add("X-Goog-FieldMask", "places.id,places.displayName,places.location,places.rating,places.types,places.photos");
             request.Content = new StringContent(requestJson, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.SendAsync(request);
@@ -85,10 +86,12 @@ public class GooglePlacesProvider : IPlacesProvider
             {
                 var name = item.GetProperty("displayName").GetProperty("text").GetString();
                 var location = item.GetProperty("location");
+                var googlePlaceId = item.TryGetProperty("id", out var idProp) ? idProp.GetString() : Guid.NewGuid().ToString();
 
                 var place = new Place
                 {
                     Id = Guid.NewGuid(),
+                    GooglePlaceId = googlePlaceId ?? Guid.NewGuid().ToString(),
                     Name = name,
                     Latitude = location.GetProperty("latitude").GetSingle(),
                     Longitude = location.GetProperty("longitude").GetSingle(),
@@ -145,7 +148,7 @@ public class GooglePlacesProvider : IPlacesProvider
             var json = JsonSerializer.Serialize(requestBody);
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.Add("X-Goog-Api-Key", _apiKey);
-            request.Headers.Add("X-Goog-FieldMask", "places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.types,places.location,places.photos");
+            request.Headers.Add("X-Goog-FieldMask", "places.id,places.displayName,places.formattedAddress,places.priceLevel,places.rating,places.types,places.location,places.photos");
             request.Content = new StringContent(json, Encoding.UTF8, "application/json");
 
             var response = await _httpClient.SendAsync(request);
@@ -168,9 +171,12 @@ public class GooglePlacesProvider : IPlacesProvider
             foreach (var item in placesJson.EnumerateArray())
             {
                 var location = item.GetProperty("location");
+                var googlePlaceId = item.TryGetProperty("id", out var idProp) ? idProp.GetString() : Guid.NewGuid().ToString();
+
                 var place = new Place
                 {
                     Id = Guid.NewGuid(),
+                    GooglePlaceId = googlePlaceId ?? Guid.NewGuid().ToString(),
                     Name = item.GetProperty("displayName").GetProperty("text").GetString(),
                     Address = item.TryGetProperty("formattedAddress", out var addr) ? addr.GetString() : null,
                     Latitude = location.GetProperty("latitude").GetSingle(),
@@ -215,7 +221,7 @@ public class GooglePlacesProvider : IPlacesProvider
         if (item.TryGetProperty("photos", out var photos) && photos.GetArrayLength() > 0)
         {
             var firstPhoto = photos[0];
-            
+
             // Try new Google Places API format first (name field)
             if (firstPhoto.TryGetProperty("name", out var photoNameElement))
             {
@@ -229,7 +235,7 @@ public class GooglePlacesProvider : IPlacesProvider
                     return place;
                 }
             }
-            
+
             // Fallback to legacy format (photoReference field) for backward compatibility
             if (firstPhoto.TryGetProperty("photoReference", out var photoRefElement))
             {
@@ -243,7 +249,7 @@ public class GooglePlacesProvider : IPlacesProvider
                     return place;
                 }
             }
-            
+
             _logger.LogWarning($"📸 Photo structure not recognized for {place.Name}: {firstPhoto.GetRawText()}");
         }
         else
@@ -251,6 +257,46 @@ public class GooglePlacesProvider : IPlacesProvider
             _logger.LogInformation($"📸 No photos available for {place.Name}");
         }
         return place;
+    }
+
+    // New AI-powered search methods
+    public async Task<List<PlaceDto>> SearchNearbyAsync(double lat, double lng, int radius, string? types, int maxResults)
+    {
+        // Use existing method and map to DTO
+        var places = await GetNearbyPlacesAsync((float)lat, (float)lng, radius, types);
+        return places.Take(maxResults).Select(MapToDto).ToList();
+    }
+
+    public async Task<PlaceDto?> GetPlaceDetailsAsync(string placeId)
+    {
+        // For now, we don't have a specific place details endpoint implemented
+        // This would require a Place Details API call to Google
+        // As a workaround, return null - this will be logged in the handler
+        _logger.LogWarning("GetPlaceDetailsAsync not fully implemented for placeId: {PlaceId}", placeId);
+        return null;
+    }
+
+    private PlaceDto MapToDto(Place place)
+    {
+        return new PlaceDto
+        {
+            PlaceId = place.GooglePlaceId,
+            Name = place.Name ?? string.Empty,
+            Description = null,
+            Address = place.Address,
+            Latitude = (double)place.Latitude,
+            Longitude = (double)place.Longitude,
+            Types = place.Category?.Split(',').ToList(),
+            Rating = double.TryParse(place.Rating, out var rating) ? rating : null,
+            PriceLevel = place.PriceLevel,
+            Photos = place.PhotoUrl != null ? new List<string> { place.PhotoUrl } : null,
+            Source = place.Source,
+            Distance = null,
+            Metadata = new Dictionary<string, object>
+            {
+                { "cached_at", place.CachedAt.ToString("o") }
+            }
+        };
     }
 
 }

@@ -25,6 +25,7 @@
 		<PackageReference Include="Microsoft.Extensions.Localization" Version="9.0.*" />
 		<PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.14.0" />
 		<PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+		<PackageReference Include="Pgvector.EntityFrameworkCore" Version="0.2.2" />
 		<PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.14.0" />
 
 		<!--OpenTelemetry-->

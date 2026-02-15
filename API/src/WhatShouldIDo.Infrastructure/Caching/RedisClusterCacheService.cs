@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using StackExchange.Redis;
 using System.Text.Json;
+using WhatShouldIDo.Application.Interfaces;
 using WhatShouldIDo.Infrastructure.Options;
 
 namespace WhatShouldIDo.Infrastructure.Caching
@@ -84,10 +85,63 @@ namespace WhatShouldIDo.Infrastructure.Caching
             }
         }
 
+        public async Task<T?> GetAsync<T>(string key) where T : class
+        {
+            var cacheKey = FormatKey(key);
+            try
+            {
+                var cachedValue = await _database.StringGetAsync(cacheKey);
+                if (cachedValue.HasValue)
+                {
+                    _statistics.RecordHit();
+                    return JsonSerializer.Deserialize<T>(cachedValue!, _jsonOptions);
+                }
+                _statistics.RecordMiss();
+                return null;
+            }
+            catch (RedisException ex)
+            {
+                _logger.LogError(ex, "Redis cluster error getting key {Key}", key);
+                _statistics.RecordError();
+                return null;
+            }
+        }
+
+        public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+        {
+            var cacheKey = FormatKey(key);
+            try
+            {
+                var serializedValue = JsonSerializer.Serialize(value, _jsonOptions);
+                await _database.StringSetAsync(cacheKey, serializedValue, expiration);
+                await AddCacheTag(cacheKey, GetTagFromKey(key));
+            }
+            catch (RedisException ex)
+            {
+                _logger.LogError(ex, "Redis cluster error setting key {Key}", key);
+                _statistics.RecordError();
+            }
+        }
+
+        public async Task<bool> ExistsAsync(string key)
+        {
+            var cacheKey = FormatKey(key);
+            try
+            {
+                return await _database.KeyExistsAsync(cacheKey);
+            }
+            catch (RedisException ex)
+            {
+                _logger.LogError(ex, "Redis cluster error checking key {Key}", key);
+                _statistics.RecordError();
+                return false;
+            }
+        }
+
         public async Task RemoveAsync(string key)
         {
             var cacheKey = FormatKey(key);
-            
+
             try
             {
                 var deleted = await _database.KeyDeleteAsync(cacheKey);

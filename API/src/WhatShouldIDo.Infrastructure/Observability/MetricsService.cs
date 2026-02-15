@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics.Metrics;
+using System.Linq;
 using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.Infrastructure.Observability
@@ -27,6 +29,9 @@ namespace WhatShouldIDo.Infrastructure.Observability
         private readonly Counter<long> _slowQueriesTotal;
         private readonly Counter<long> _rateLimitHitsTotal;
         private readonly Counter<long> _placeSearchesTotal;
+        private readonly Counter<long> _aiProviderSelectedTotal;
+        private readonly Counter<long> _aiCallSuccessTotal;
+        private readonly Counter<long> _aiCallFailuresTotal;
 
         // Histograms
         private readonly Histogram<double> _requestDurationSeconds;
@@ -34,6 +39,8 @@ namespace WhatShouldIDo.Infrastructure.Observability
         private readonly Histogram<double> _dbLatencySeconds;
         private readonly Histogram<double> _databaseQueryDuration;
         private readonly Histogram<double> _placeSearchDuration;
+        private readonly Histogram<double> _aiCallLatencySeconds;
+        private readonly Histogram<double> _routeGenerationDurationSeconds;
 
         // Gauges (implemented via ObservableGauge in constructor if needed)
         private readonly ObservableGauge<int> _quotaUsersWithZero;
@@ -162,6 +169,37 @@ namespace WhatShouldIDo.Infrastructure.Observability
             _activeUsers = _meter.CreateUpDownCounter<long>(
                 "active_users",
                 description: "Number of active users");
+
+            // AI Provider Metrics
+            _aiProviderSelectedTotal = _meter.CreateCounter<long>(
+                "ai_provider_selected_total",
+                description: "Total number of AI provider selections");
+
+            _aiCallSuccessTotal = _meter.CreateCounter<long>(
+                "ai_call_success_total",
+                description: "Total number of successful AI API calls");
+
+            _aiCallFailuresTotal = _meter.CreateCounter<long>(
+                "ai_call_failures_total",
+                description: "Total number of failed AI API calls");
+
+            _aiCallLatencySeconds = _meter.CreateHistogram<double>(
+                "ai_call_latency_seconds",
+                unit: "s",
+                description: "AI API call latency in seconds",
+                advice: new InstrumentAdvice<double>
+                {
+                    HistogramBucketBoundaries = new[] { 0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0 }
+                });
+
+            _routeGenerationDurationSeconds = _meter.CreateHistogram<double>(
+                "route_generation_duration_seconds",
+                unit: "s",
+                description: "AI route generation duration in seconds",
+                advice: new InstrumentAdvice<double>
+                {
+                    HistogramBucketBoundaries = new[] { 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 60.0 }
+                });
         }
 
         /// <inheritdoc/>
@@ -370,6 +408,58 @@ namespace WhatShouldIDo.Infrastructure.Observability
             _activeUsers.Add(-1);
         }
 
+        /// <inheritdoc/>
+        public void RecordAIProviderSelected(string providerName)
+        {
+            var tags = new[]
+            {
+                new KeyValuePair<string, object?>("provider", providerName)
+            };
+
+            _aiProviderSelectedTotal.Add(1, tags);
+        }
+
+        /// <inheritdoc/>
+        public void RecordAICallLatency(string providerName, string operation, double durationSeconds)
+        {
+            var tags = new[]
+            {
+                new KeyValuePair<string, object?>("provider", providerName),
+                new KeyValuePair<string, object?>("operation", operation)
+            };
+
+            _aiCallLatencySeconds.Record(durationSeconds, tags);
+        }
+
+        /// <inheritdoc/>
+        public void IncrementAICallSuccess(string providerName)
+        {
+            var tags = new[]
+            {
+                new KeyValuePair<string, object?>("provider", providerName)
+            };
+
+            _aiCallSuccessTotal.Add(1, tags);
+        }
+
+        /// <inheritdoc/>
+        public void IncrementAICallFailure(string providerName, string reason)
+        {
+            var tags = new[]
+            {
+                new KeyValuePair<string, object?>("provider", providerName),
+                new KeyValuePair<string, object?>("reason", reason)
+            };
+
+            _aiCallFailuresTotal.Add(1, tags);
+        }
+
+        /// <inheritdoc/>
+        public void RecordRouteGenerationDuration(double durationSeconds)
+        {
+            _routeGenerationDurationSeconds.Record(durationSeconds);
+        }
+
         /// <summary>
         /// Gets the result count bucket for grouping search results.
         /// </summary>
@@ -386,6 +476,36 @@ namespace WhatShouldIDo.Infrastructure.Observability
                 <= 50 => "21-50",
                 _ => "50+"
             };
+        }
+
+        // ===== Generic Metrics Methods =====
+
+        /// <inheritdoc/>
+        public void RecordHistogram(string name, double value, IEnumerable<KeyValuePair<string, object?>>? tags = null)
+        {
+            var histogram = _meter.CreateHistogram<double>(name);
+            if (tags != null)
+            {
+                histogram.Record(value, tags.ToArray());
+            }
+            else
+            {
+                histogram.Record(value);
+            }
+        }
+
+        /// <inheritdoc/>
+        public void IncrementCounter(string name, IEnumerable<KeyValuePair<string, object?>>? tags = null)
+        {
+            var counter = _meter.CreateCounter<long>(name);
+            if (tags != null)
+            {
+                counter.Add(1, tags.ToArray());
+            }
+            else
+            {
+                counter.Add(1);
+            }
         }
     }
 }

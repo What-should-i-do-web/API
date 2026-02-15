@@ -197,4 +197,18 @@ public class LocalizationService : ILocalizationService
 
         return reason;
     }
+
+    public string GetString(string key)
+    {
+        try
+        {
+            var culture = GetUserCultureFromRequest();
+            return GetLocalizedTextAsync(key, culture).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Fall back to key if localization fails
+            return key;
+        }
+    }
 }

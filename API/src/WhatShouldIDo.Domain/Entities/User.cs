@@ -40,6 +40,7 @@ namespace WhatShouldIDo.Domain.Entities
         // Navigation properties
         public virtual ICollection<UserVisit> VisitHistory { get; set; } = new List<UserVisit>();
         public virtual UserProfile? Profile { get; set; }
+        public virtual UserTasteProfile? TasteProfile { get; set; }
     }
     
     public enum SubscriptionTier

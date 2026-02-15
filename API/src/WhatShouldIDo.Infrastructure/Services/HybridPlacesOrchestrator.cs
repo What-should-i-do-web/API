@@ -1,5 +1,6 @@
 using WhatShouldIDo.Application.Interfaces;
 using WhatShouldIDo.Application.Common;
+using WhatShouldIDo.Application.DTOs.Response;
 using WhatShouldIDo.Domain.Entities;
 using WhatShouldIDo.Infrastructure.Options;
 using Microsoft.Extensions.Options;
@@ -162,4 +163,40 @@ public class HybridPlacesOrchestrator : IPlacesProvider
         prompt.ToLowerInvariant().Contains("attraction") ||
         prompt.ToLowerInvariant().Contains("museum") ||
         prompt.ToLowerInvariant().Contains("historic");
+
+    // New AI-powered search methods
+    public async Task<List<PlaceDto>> SearchNearbyAsync(double lat, double lng, int radius, string? types, int maxResults)
+    {
+        var places = await GetNearbyPlacesAsync((float)lat, (float)lng, radius, types);
+        return places.Take(maxResults).Select(MapToDto).ToList();
+    }
+
+    public async Task<PlaceDto?> GetPlaceDetailsAsync(string placeId)
+    {
+        // Not implemented for Hybrid orchestrator
+        return null;
+    }
+
+    private PlaceDto MapToDto(Place place)
+    {
+        return new PlaceDto
+        {
+            PlaceId = place.GooglePlaceId,
+            Name = place.Name ?? string.Empty,
+            Description = null,
+            Address = place.Address,
+            Latitude = (double)place.Latitude,
+            Longitude = (double)place.Longitude,
+            Types = place.Category?.Split(',').ToList(),
+            Rating = double.TryParse(place.Rating, out var rating) ? rating : null,
+            PriceLevel = place.PriceLevel,
+            Photos = place.PhotoUrl != null ? new List<string> { place.PhotoUrl } : null,
+            Source = place.Source,
+            Distance = null,
+            Metadata = new Dictionary<string, object>
+            {
+                { "cached_at", place.CachedAt.ToString("o") }
+            }
+        };
+    }
 }

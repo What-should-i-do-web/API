@@ -11,4 +11,10 @@ public interface ILocalizationService
     bool IsSupportedCulture(string culture);
     string GetDefaultCulture();
     IEnumerable<string> GetSupportedCultures();
+
+    /// <summary>
+    /// Get localized string synchronously.
+    /// Falls back to key if not found.
+    /// </summary>
+    string GetString(string key);
 }

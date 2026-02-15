@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.Infrastructure.Caching
 {
@@ -35,11 +36,38 @@ namespace WhatShouldIDo.Infrastructure.Caching
             return result;
         }
 
-        public async Task RemoveAsync(string key)
+        public Task<T?> GetAsync<T>(string key) where T : class
+        {
+            _cache.TryGetValue(key, out T? cachedResult);
+            if (cachedResult != null)
+            {
+                _logger.LogInformation("Memory cache hit: {key}", key);
+            }
+            return Task.FromResult(cachedResult);
+        }
+
+        public Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+        {
+            var options = new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = expiration
+            };
+            _cache.Set(key, value, options);
+            _logger.LogInformation("💾 Memory cache set: {key} (TTL: {ttl} min)", key, expiration.TotalMinutes);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> ExistsAsync(string key)
+        {
+            bool exists = _cache.TryGetValue(key, out _);
+            return Task.FromResult(exists);
+        }
+
+        public Task RemoveAsync(string key)
         {
             _cache.Remove(key);
             _logger.LogWarning("Memory cache removed: {key}", key);
-            await Task.CompletedTask;
+            return Task.CompletedTask;
         }
     }
 }

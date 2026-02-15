@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using WhatShouldIDo.Application.DTOs.Requests;
 using WhatShouldIDo.Application.DTOs.Response;
 using WhatShouldIDo.Application.Interfaces;
+using WhatShouldIDo.Application.Models;
 using WhatShouldIDo.Domain.Entities;
 
 namespace WhatShouldIDo.Infrastructure.Services
@@ -15,6 +16,11 @@ namespace WhatShouldIDo.Infrastructure.Services
         private readonly IPreferenceLearningService _preferenceLearningService;
         private readonly IVariabilityEngine _variabilityEngine;
         private readonly IContextEngine _contextEngine;
+        private readonly IUserHistoryRepository _userHistoryRepository;
+        private readonly IRouteOptimizationService _routeOptimizationService;
+        private readonly IAIService _aiService;
+        private readonly IHybridScorer _hybridScorer;
+        private readonly ITasteProfileRepository _tasteProfileRepository;
         private readonly ILogger<SmartSuggestionService> _logger;
 
         public SmartSuggestionService(
@@ -25,6 +31,11 @@ namespace WhatShouldIDo.Infrastructure.Services
             IPreferenceLearningService preferenceLearningService,
             IVariabilityEngine variabilityEngine,
             IContextEngine contextEngine,
+            IUserHistoryRepository userHistoryRepository,
+            IRouteOptimizationService routeOptimizationService,
+            IAIService aiService,
+            IHybridScorer hybridScorer,
+            ITasteProfileRepository tasteProfileRepository,
             ILogger<SmartSuggestionService> logger)
         {
             _placesProvider = placesProvider;
@@ -34,6 +45,11 @@ namespace WhatShouldIDo.Infrastructure.Services
             _preferenceLearningService = preferenceLearningService;
             _variabilityEngine = variabilityEngine;
             _contextEngine = contextEngine;
+            _userHistoryRepository = userHistoryRepository;
+            _routeOptimizationService = routeOptimizationService;
+            _aiService = aiService;
+            _hybridScorer = hybridScorer;
+            _tasteProfileRepository = tasteProfileRepository;
             _logger = logger;
         }
 
@@ -157,26 +173,40 @@ namespace WhatShouldIDo.Infrastructure.Services
                 var dayOfWeek = DateTime.Now.DayOfWeek.ToString().ToLower();
                 filteredPlaces = await _variabilityEngine.ApplyContextualVarietyAsync(userId, filteredPlaces, timeOfDay, dayOfWeek, cancellationToken);
 
-                // Step 6: Get user preferences for scoring
+                // Step 6: Prepare scoring context (hybrid personalization)
                 var userPreferences = await _preferenceLearningService.GetLearnedPreferencesAsync(userId, cancellationToken);
+                var tasteProfile = await _tasteProfileRepository.GetByUserIdAsync(userId, cancellationToken);
 
-                // Step 7: Score and rank places
-                var scoredSuggestions = new List<(SuggestionDto suggestion, float personalizedScore)>();
-
-                foreach (var place in filteredPlaces)
+                var scoringContext = new Application.Models.ScoringContext
                 {
-                    var suggestion = await CreateSuggestionFromPlaceAsync(place, originalPrompt, cancellationToken);
-                    var personalizedScore = await CalculatePersonalizedScoreAsync(userId, place, userPreferences, cancellationToken);
-                    
-                    suggestion.Score = personalizedScore;
-                    scoredSuggestions.Add((suggestion, personalizedScore));
+                    Origin = filteredPlaces.Any()
+    ? ((double)filteredPlaces.First().Latitude,
+       (double)filteredPlaces.First().Longitude)
+    : null,
+
+                    ImplicitPreferences = userPreferences,
+                    TasteProfile = tasteProfile
+                };
+
+                // Step 7: Score and rank places using hybrid scorer
+                var scoredPlaces = await _hybridScorer.ScoreAndExplainAsync(userId, filteredPlaces, scoringContext, cancellationToken);
+
+                // Step 8: Convert to SuggestionDto and apply final ranking
+                var finalSuggestions = new List<SuggestionDto>();
+
+                foreach (var scoredPlace in scoredPlaces)
+                {
+                    var suggestion = await CreateSuggestionFromPlaceAsync(scoredPlace.Place, originalPrompt, cancellationToken);
+                    suggestion.Score = scoredPlace.Score;
+                    suggestion.ExplainabilityReasons = scoredPlace.Reasons; // Add explainability
+
+                    finalSuggestions.Add(suggestion);
                 }
 
-                // Step 8: Final ranking with personalization
-                var finalSuggestions = scoredSuggestions
-                    .OrderByDescending(s => s.personalizedScore)
-                    .ThenByDescending(s => s.suggestion.IsSponsored) // Sponsored content still gets priority
-                    .Select(s => s.suggestion)
+                // Final sort by score, then sponsored priority
+                finalSuggestions = finalSuggestions
+                    .OrderByDescending(s => s.Score)
+                    .ThenByDescending(s => s.IsSponsored)
                     .ToList();
 
                 _logger.LogDebug("Applied personalization: {Original} → {Filtered} → {Final} suggestions for user {UserId}",
@@ -459,10 +489,442 @@ namespace WhatShouldIDo.Infrastructure.Services
             return month switch
             {
                 12 or 1 or 2 => "winter",
-                3 or 4 or 5 => "spring", 
+                3 or 4 or 5 => "spring",
                 6 or 7 or 8 => "summer",
                 9 or 10 or 11 => "autumn",
                 _ => "spring"
+            };
+        }
+
+        // ============== Surprise Me Implementation ==============
+
+        public async Task<SurpriseMeResponse> GenerateSurpriseRouteAsync(
+            Guid userId,
+            SurpriseMeRequest request,
+            CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                _logger.LogInformation("Generating Surprise Me route for user {UserId} in {Area}", userId, request.TargetArea);
+
+                // Generate session ID for tracking
+                var sessionId = Guid.NewGuid().ToString();
+
+                // Step 1: Load user's personalization data
+                var (exclusions, favorites, recentlyExcludedIds) = await LoadUserPersonalizationDataAsync(userId, cancellationToken);
+
+                _logger.LogDebug("Loaded {ExclusionCount} exclusions, {FavoriteCount} favorites, {RecentCount} recently suggested places",
+                    exclusions.Count, favorites.Count, recentlyExcludedIds.Count);
+
+                // Step 2: Fetch places from target area
+                var allPlaces = await FetchPlacesFromAreaAsync(request, cancellationToken);
+                _logger.LogDebug("Fetched {PlaceCount} places from {Area}", allPlaces.Count, request.TargetArea);
+
+                // Step 3: Apply hard filters (exclusions, recently suggested window)
+                var filteredPlaces = ApplyHardFilters(allPlaces, exclusions, recentlyExcludedIds);
+                _logger.LogDebug("After hard filters: {FilteredCount} places remaining", filteredPlaces.Count);
+
+                if (!filteredPlaces.Any())
+                {
+                    throw new InvalidOperationException("No places available after applying filters. Try expanding the search radius or adjusting exclusions.");
+                }
+
+                // Step 4: Apply personalization and AI re-ranking
+                var personalizedPlaces = await ApplyPersonalizationAndRankingAsync(userId, filteredPlaces, favorites, request, cancellationToken);
+                _logger.LogDebug("After personalization: {PersonalizedCount} places ranked", personalizedPlaces.Count);
+
+                // Step 5: Select diverse set of places
+                var selectedPlaces = SelectDiversePlaces(personalizedPlaces, request.MinStops, request.MaxStops);
+                _logger.LogDebug("Selected {SelectedCount} diverse places", selectedPlaces.Count);
+
+                // Step 6: Optimize route order
+                var optimizedRoute = await OptimizeRouteOrderAsync(selectedPlaces, request, cancellationToken);
+
+                // Step 7: Build response with metadata
+                var response = await BuildSurpriseMeResponseAsync(
+                    userId,
+                    optimizedRoute,
+                    selectedPlaces,
+                    request,
+                    sessionId,
+                    cancellationToken);
+
+                // Step 8: Persist to history if requested
+                if (request.SaveToHistory)
+                {
+                    await PersistToHistoryAsync(userId, response, selectedPlaces, sessionId, cancellationToken);
+                    response.SavedToHistory = true;
+                }
+
+                _logger.LogInformation("Successfully generated Surprise Me route for user {UserId} with {StopCount} stops",
+                    userId, selectedPlaces.Count);
+
+                return response;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generating Surprise Me route for user {UserId}", userId);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Loads user's exclusions, favorites, and recently suggested place IDs
+        /// </summary>
+        private async Task<(List<string> exclusions, List<string> favorites, List<string> recentlyExcluded)>
+            LoadUserPersonalizationDataAsync(Guid userId, CancellationToken cancellationToken)
+        {
+            // Load active exclusions
+            var exclusionEntities = await _userHistoryRepository.GetActiveExclusionsAsync(userId, cancellationToken);
+            var exclusions = exclusionEntities.Select(e => e.PlaceId).ToList();
+
+            // Load favorites
+            var favoriteEntities = await _userHistoryRepository.GetUserFavoritesAsync(userId, cancellationToken);
+            var favorites = favoriteEntities.Select(f => f.PlaceId).ToList();
+
+            // Load recently suggested place IDs (exclusion window)
+            // Default exclusion window size is 3 (configurable)
+            var recentlyExcluded = (await _userHistoryRepository.GetRecentlyExcludedPlaceIdsAsync(userId, 3, cancellationToken))
+                .ToList();
+
+            return (exclusions, favorites, recentlyExcluded);
+        }
+
+        /// <summary>
+        /// Fetches places from the target area using the places provider
+        /// </summary>
+        private async Task<List<Place>> FetchPlacesFromAreaAsync(SurpriseMeRequest request, CancellationToken cancellationToken)
+        {
+            var places = new List<Place>();
+
+            // If preferred categories specified, search for each category
+            if (request.PreferredCategories?.Any() == true)
+            {
+                foreach (var category in request.PreferredCategories)
+                {
+                    var categoryPlaces = await _placesProvider.SearchByPromptAsync(
+                        category,
+                        (float)request.Latitude,
+                        (float)request.Longitude,
+                        null);
+                    places.AddRange(categoryPlaces);
+                }
+
+                // Remove duplicates
+                places = places.GroupBy(p => p.GooglePlaceId).Select(g => g.First()).ToList();
+            }
+            else
+            {
+                // Get nearby places (all categories)
+                places = await _placesProvider.GetNearbyPlacesAsync(
+                    (float)request.Latitude,
+                    (float)request.Longitude,
+                    request.RadiusMeters);
+            }
+
+            return places;
+        }
+
+        /// <summary>
+        /// Applies hard filters: exclusions and recently suggested window
+        /// </summary>
+        private List<Place> ApplyHardFilters(List<Place> places, List<string> exclusions, List<string> recentlyExcludedIds)
+        {
+            return places.Where(p =>
+                !exclusions.Contains(p.GooglePlaceId) &&                  // Not in exclusion list
+                !recentlyExcludedIds.Contains(p.GooglePlaceId)            // Not recently suggested
+            ).ToList();
+        }
+
+        /// <summary>
+        /// Applies personalization scoring and AI-based ranking
+        /// </summary>
+        private async Task<List<(Place place, double score)>> ApplyPersonalizationAndRankingAsync(
+            Guid userId,
+            List<Place> places,
+            List<string> favoriteIds,
+            SurpriseMeRequest request,
+            CancellationToken cancellationToken)
+        {
+            var userPreferences = await _preferenceLearningService.GetLearnedPreferencesAsync(userId, cancellationToken);
+            var scoredPlaces = new List<(Place place, double score)>();
+
+            foreach (var place in places)
+            {
+                // Calculate base personalization score
+                var baseScore = await CalculatePersonalizedScoreAsync(userId, place, userPreferences, cancellationToken);
+
+                // Apply favorite boost
+                if (favoriteIds.Contains(place.GooglePlaceId))
+                {
+                    baseScore += 0.5f; // Strong boost for favorites
+                }
+
+                // Apply budget preference
+                if (!string.IsNullOrWhiteSpace(request.BudgetLevel) && place.PriceLevel != null)
+                {
+                    var budgetScore = CalculateBudgetScore(request.BudgetLevel, place.PriceLevel);
+                    baseScore += (float)budgetScore * 0.2f;
+                }
+
+                scoredPlaces.Add((place, baseScore));
+            }
+
+            // Sort by score descending
+            return scoredPlaces.OrderByDescending(sp => sp.score).ToList();
+        }
+
+        /// <summary>
+        /// Selects a diverse set of places from ranked list
+        /// </summary>
+        private List<Place> SelectDiversePlaces(List<(Place place, double score)> rankedPlaces, int minStops, int maxStops)
+        {
+            var selectedPlaces = new List<Place>();
+            var categoryCount = new Dictionary<string, int>();
+            var targetCount = Math.Min(maxStops, rankedPlaces.Count);
+
+            // First pass: Select top-scored places with category diversity
+            foreach (var (place, score) in rankedPlaces)
+            {
+                if (selectedPlaces.Count >= targetCount)
+                    break;
+
+                var category = place.Category ?? "other";
+                var currentCategoryCount = categoryCount.GetValueOrDefault(category, 0);
+
+                // Limit same category to avoid monotony (max 2 of same category)
+                if (currentCategoryCount < 2)
+                {
+                    selectedPlaces.Add(place);
+                    categoryCount[category] = currentCategoryCount + 1;
+                }
+            }
+
+            // Second pass: Fill remaining slots if we haven't reached minStops
+            if (selectedPlaces.Count < minStops)
+            {
+                var remaining = rankedPlaces
+                    .Select(rp => rp.place)
+                    .Except(selectedPlaces)
+                    .Take(minStops - selectedPlaces.Count);
+                selectedPlaces.AddRange(remaining);
+            }
+
+            return selectedPlaces;
+        }
+
+        /// <summary>
+        /// Optimizes the route order using TSP solver
+        /// </summary>
+        private async Task<OptimizedRoute> OptimizeRouteOrderAsync(
+            List<Place> places,
+            SurpriseMeRequest request,
+            CancellationToken cancellationToken)
+        {
+            // Convert places to waypoints
+            var waypoints = places.Select(p => new RouteWaypoint
+            {
+                Id = p.GooglePlaceId,
+                Name = p.Name,
+                Latitude = (double)p.Latitude,
+                Longitude = (double)p.Longitude,
+                IsMandatory = true
+            }).ToList();
+
+            // Use first place as start point
+            var startPoint = ((double)places.First().Latitude, (double)places.First().Longitude);
+
+            // Optimize route
+            var optimizedRoute = await _routeOptimizationService.OptimizeRouteAsync(
+                startPoint,
+                waypoints,
+                request.TransportationMode,
+                cancellationToken);
+
+            return optimizedRoute;
+        }
+
+        /// <summary>
+        /// Builds the Surprise Me response with all metadata
+        /// </summary>
+        private async Task<SurpriseMeResponse> BuildSurpriseMeResponseAsync(
+            Guid userId,
+            OptimizedRoute optimizedRoute,
+            List<Place> selectedPlaces,
+            SurpriseMeRequest request,
+            string sessionId,
+            CancellationToken cancellationToken)
+        {
+            var userFavorites = (await _userHistoryRepository.GetUserFavoritesAsync(userId, cancellationToken))
+                .Select(f => f.PlaceId)
+                .ToHashSet();
+
+            var userVisits = await _visitTrackingService.GetUserVisitHistoryAsync(userId, days: 90, cancellationToken);
+            var visitedPlaceIds = userVisits.Select(v => v.PlaceId).ToHashSet();
+
+            // Build suggested places list
+            var suggestedPlaces = new List<SurpriseMePlaceDto>();
+            int previousDistance = 0;
+            int previousDuration = 0;
+
+            foreach (var optimizedWaypoint in optimizedRoute.OrderedWaypoints)
+            {
+                var place = selectedPlaces.First(p => p.GooglePlaceId == optimizedWaypoint.Waypoint.Id);
+
+                var placeDto = new SurpriseMePlaceDto
+                {
+                    PlaceId = place.GooglePlaceId,
+                    Name = place.Name,
+                    Category = place.Category,
+                    Latitude = (double)place.Latitude,
+                    Longitude = (double)place.Longitude,
+                    Address = place.Address,
+                    Rating = place.Rating != null && double.TryParse(place.Rating, out var rating) ? rating : null,
+                    PriceLevel = place.PriceLevel != null && int.TryParse(place.PriceLevel, out var priceLevel) ? priceLevel : null,
+                    PhotoUrl = place.PhotoUrl,
+                    RouteOrder = optimizedWaypoint.OptimizedOrder,
+                    Reason = request.IncludeReasoning ? await GenerateAIReasonAsync(place, request, cancellationToken) : null,
+                    PersonalizationScore = 0.8, // Placeholder, could be calculated
+                    IsFavorite = userFavorites.Contains(place.GooglePlaceId),
+                    PreviouslyVisited = visitedPlaceIds.Contains(place.Id),
+                    DistanceFromPrevious = optimizedWaypoint.OptimizedOrder > 1 ? (double)optimizedWaypoint.DistanceFromPreviousMeters : null,
+                    TravelTimeFromPrevious = optimizedWaypoint.OptimizedOrder > 1 ? optimizedWaypoint.DurationFromPreviousSeconds / 60 : null
+                };
+
+                suggestedPlaces.Add(placeDto);
+            }
+
+            // Calculate diversity score (0-1, based on unique categories)
+            var uniqueCategories = selectedPlaces.Select(p => p.Category).Distinct().Count();
+            var diversityScore = Math.Min(1.0, uniqueCategories / (double)selectedPlaces.Count);
+
+            // Build route DTO
+            var routeDto = new RouteDto
+            {
+                Id = Guid.NewGuid(),
+                Name = $"Surprise Me - {request.TargetArea}",
+                Description = $"AI-generated personalized route in {request.TargetArea}",
+                UserId = userId,
+                TotalDistance = optimizedRoute.TotalDistanceMeters,
+                EstimatedDuration = optimizedRoute.TotalDurationSeconds / 60, // Convert to minutes
+                StopCount = selectedPlaces.Count,
+                TransportationMode = request.TransportationMode,
+                RouteType = "surprise_me",
+                Tags = new List<string> { "surprise_me", "ai_generated" },
+                IsPublic = false,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            var response = new SurpriseMeResponse
+            {
+                Route = routeDto,
+                SuggestedPlaces = suggestedPlaces,
+                Reasoning = request.IncludeReasoning ? GenerateRouteReasoning(selectedPlaces, diversityScore) : null,
+                DiversityScore = diversityScore,
+                PersonalizationScore = 0.85, // Placeholder, could be calculated as average
+                SessionId = sessionId,
+                SavedToHistory = false
+            };
+
+            return response;
+        }
+
+        /// <summary>
+        /// Generates AI reasoning for a place suggestion
+        /// </summary>
+        private Task<string> GenerateAIReasonAsync(Place place, SurpriseMeRequest request, CancellationToken cancellationToken)
+        {
+            // Generate contextual reason based on place attributes
+            var reason = place.Category?.ToLower() switch
+            {
+                var c when c.Contains("restaurant") || c.Contains("food") => $"Delicious dining in {request.TargetArea}",
+                var c when c.Contains("museum") || c.Contains("gallery") => $"Cultural experience in {request.TargetArea}",
+                var c when c.Contains("park") || c.Contains("garden") => $"Beautiful outdoor space in {request.TargetArea}",
+                var c when c.Contains("cafe") || c.Contains("coffee") => $"Perfect coffee spot in {request.TargetArea}",
+                var c when c.Contains("bar") || c.Contains("nightlife") => $"Great nightlife in {request.TargetArea}",
+                var c when c.Contains("shopping") || c.Contains("mall") => $"Shopping destination in {request.TargetArea}",
+                _ => $"Great spot in {request.TargetArea}"
+            };
+
+            return Task.FromResult(reason);
+        }
+
+        /// <summary>
+        /// Generates overall reasoning for the route
+        /// </summary>
+        private string GenerateRouteReasoning(List<Place> places, double diversityScore)
+        {
+            var categories = places.Select(p => p.Category).Distinct().ToList();
+            var categoriesText = string.Join(", ", categories.Take(3));
+
+            if (diversityScore > 0.7)
+            {
+                return $"This diverse route includes {categoriesText} and more, offering a well-rounded experience of the area.";
+            }
+            else
+            {
+                return $"This curated route focuses on {categoriesText}, perfectly tailored to your preferences.";
+            }
+        }
+
+        /// <summary>
+        /// Persists the route and suggestions to user's history
+        /// </summary>
+        private async Task PersistToHistoryAsync(
+            Guid userId,
+            SurpriseMeResponse response,
+            List<Place> selectedPlaces,
+            string sessionId,
+            CancellationToken cancellationToken)
+        {
+            // Persist suggestion history (batch)
+            var placeTuples = selectedPlaces.Select(p => (p.GooglePlaceId, p.Name, p.Category)).ToList();
+            await _userHistoryRepository.AddSuggestionHistoryBatchAsync(
+                userId,
+                placeTuples,
+                "surprise_me",
+                sessionId,
+                cancellationToken);
+
+            // Persist route history
+            var routeDataJson = System.Text.Json.JsonSerializer.Serialize(response.Route);
+            await _userHistoryRepository.AddRouteHistoryAsync(
+                userId,
+                response.Route.Name,
+                routeDataJson,
+                selectedPlaces.Count,
+                response.Route.Id,
+                "surprise_me",
+                cancellationToken);
+
+            _logger.LogInformation("Persisted Surprise Me route to history for user {UserId}, session {SessionId}",
+                userId, sessionId);
+        }
+
+        /// <summary>
+        /// Calculates budget score based on user preference and place price level
+        /// </summary>
+        private double CalculateBudgetScore(string budgetLevel, string placePriceLevel)
+        {
+            if (!int.TryParse(placePriceLevel, out var priceLevel))
+                return 0;
+
+            var targetPrice = budgetLevel.ToLower() switch
+            {
+                "low" => 1,
+                "medium" => 2,
+                "high" => 3,
+                _ => 2
+            };
+
+            // Perfect match = 1.0, off by 1 = 0.5, off by 2+ = 0
+            var difference = Math.Abs(priceLevel - targetPrice);
+            return difference switch
+            {
+                0 => 1.0,
+                1 => 0.5,
+                _ => 0.0
             };
         }
     }

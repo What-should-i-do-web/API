@@ -23,33 +23,60 @@ namespace WhatShouldIDo.Infrastructure.Services
 
         public async Task<RoutePointDto> CreateAsync(CreateRoutePointRequest request)
         {
-            var rp = new RoutePoint(request.RouteId,new Coordinates(request.Latitude, request.Longitude), request.Order);
-            // Assuming RouteId is set via navigation or foreign key property
-            rp.RouteId = request.RouteId;
+            var location = new Coordinates(request.Latitude, request.Longitude);
+            var rp = new RoutePoint(request.RouteId, location, request.Order);
             await _routePointRepository.AddAsync(rp);
             await _routePointRepository.SaveChangesAsync();
-            return new RoutePointDto(rp.Id, request.RouteId, rp.Location.Latitude, rp.Location.Longitude, rp.Order);
+            return new RoutePointDto
+            {
+                Id = rp.Id,
+                RouteId = request.RouteId,
+                Latitude = rp.Location.Latitude,
+                Longitude = rp.Location.Longitude,
+                Order = rp.Order
+            };
         }
 
         public async Task<IEnumerable<RoutePointDto>> GetByRouteAsync(Guid routeId)
         {
             var points = await _routePointRepository.GetByRouteIdAsync(routeId);
-            return points.Select(rp => new RoutePointDto(rp.Id, routeId, rp.Location.Latitude, rp.Location.Longitude, rp.Order));
+            return points.Select(rp => new RoutePointDto
+            {
+                Id = rp.Id,
+                RouteId = routeId,
+                Latitude = rp.Location.Latitude,
+                Longitude = rp.Location.Longitude,
+                Order = rp.Order
+            });
         }
 
         public async Task<RoutePointDto> GetByIdAsync(Guid id)
         {
             var rp = await _routePointRepository.GetByIdAsync(id);
-            return new RoutePointDto(rp.Id, rp.RouteId, rp.Location.Latitude, rp.Location.Longitude, rp.Order);
+            return new RoutePointDto
+            {
+                Id = rp.Id,
+                RouteId = rp.RouteId,
+                Latitude = rp.Location.Latitude,
+                Longitude = rp.Location.Longitude,
+                Order = rp.Order
+            };
         }
 
         public async Task<RoutePointDto> UpdateAsync(Guid id, UpdateRoutePointRequest request)
         {
             var rp = await _routePointRepository.GetByIdAsync(id);
-            rp.UpdateOrder(request.Order); // assume such method exists
+            rp.UpdateOrder(request.Order);
             _routePointRepository.Update(rp);
             await _routePointRepository.SaveChangesAsync();
-            return new RoutePointDto(rp.Id, rp.RouteId, rp.Location.Latitude, rp.Location.Longitude, rp.Order);
+            return new RoutePointDto
+            {
+                Id = rp.Id,
+                RouteId = rp.RouteId,
+                Latitude = rp.Location.Latitude,
+                Longitude = rp.Location.Longitude,
+                Order = rp.Order
+            };
         }
 
         public async Task DeleteAsync(Guid id)

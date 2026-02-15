@@ -6,6 +6,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using WhatShouldIDo.Application.Interfaces;
 
 namespace WhatShouldIDo.Infrastructure.Caching
 {
@@ -43,7 +44,33 @@ namespace WhatShouldIDo.Infrastructure.Caching
             return result;
         }
 
-        public  async Task RemoveAsync(string key)
+        public async Task<T?> GetAsync<T>(string key) where T : class
+        {
+            var cached = await _cache.GetStringAsync(key);
+            if (cached != null)
+            {
+                return JsonSerializer.Deserialize<T>(cached);
+            }
+            return null;
+        }
+
+        public async Task SetAsync<T>(string key, T value, TimeSpan expiration) where T : class
+        {
+            var json = JsonSerializer.Serialize(value);
+            var options = new DistributedCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = expiration
+            };
+            await _cache.SetStringAsync(key, json, options);
+        }
+
+        public async Task<bool> ExistsAsync(string key)
+        {
+            var cached = await _cache.GetStringAsync(key);
+            return cached != null;
+        }
+
+        public async Task RemoveAsync(string key)
         {
             await _cache.RemoveAsync(key);
             _logger.LogWarning("Redis removed: {key}", key);
