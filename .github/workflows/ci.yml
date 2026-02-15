@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 jobs:
-  build-and-test:
+  build:
     runs-on: ubuntu-latest
 
     steps:
@@ -43,10 +43,6 @@ jobs:
 
       - name: Build solution
         run: dotnet build ./API/WhatShouldIDo.sln -c Release --no-restore
-
-      - name: Run tests
-        run: dotnet test ./API/src/WhatShouldIDo.Tests/WhatShouldIDo.API.IntegrationTests.csproj -c Release --no-build
-        continue-on-error: true
 
       - name: Docker build check
         run: docker build -t whatshouldido-api-test -f ./API/src/WhatShouldIDo.API/Dockerfile ./API

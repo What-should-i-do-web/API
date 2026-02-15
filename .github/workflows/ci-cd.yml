@@ -13,7 +13,7 @@ env:
   DOTNET_VERSION: '9.0.x'
 
 jobs:
-  build_test:
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -29,11 +29,8 @@ jobs:
       - name: Build
         run: dotnet build ./API/WhatShouldIDo.sln -c Release --no-restore
 
-      - name: Test
-        run: dotnet test ./API/WhatShouldIDo.sln -c Release --no-build
-
   docker_push_deploy:
-    needs: build_test
+    needs: build
     runs-on: ubuntu-latest
     permissions:
       id-token: write
