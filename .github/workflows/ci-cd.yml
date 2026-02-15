@@ -24,13 +24,13 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
       - name: Restore
-        run: dotnet restore WhatShouldIDo.sln
+        run: dotnet restore ./API/WhatShouldIDo.sln
 
       - name: Build
-        run: dotnet build WhatShouldIDo.sln -c Release --no-restore
+        run: dotnet build ./API/WhatShouldIDo.sln -c Release --no-restore
 
       - name: Test
-        run: dotnet test WhatShouldIDo.sln -c Release --no-build
+        run: dotnet test ./API/WhatShouldIDo.sln -c Release --no-build
 
   docker_push_deploy:
     needs: build_test
@@ -54,7 +54,7 @@ jobs:
         run: |
           IMAGE_TAG=${{ github.sha }}
           REPO_URI=$(aws ecr describe-repositories --repository-names $ECR_REPOSITORY --query 'repositories[0].repositoryUri' --output text)
-          docker build -t $REPO_URI:$IMAGE_TAG -f Dockerfile .
+          docker build -t $REPO_URI:$IMAGE_TAG -f ./API/src/WhatShouldIDo.API/Dockerfile ./API
           docker push $REPO_URI:$IMAGE_TAG
           echo "IMAGE_URI=$REPO_URI:$IMAGE_TAG" >> $GITHUB_ENV
 
