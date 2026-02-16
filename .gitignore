@@ -32,7 +32,11 @@ docker-compose.override.yml
 /API/ProjectStructure_2025-10-11.md
 /API/archive/legacy/jenkins/plugins.txt
 
+/API/src/WhatShouldIDo.API/appsettings.json
+/API/src/WhatShouldIDo.API/appsettings.Development.json
 
+*.appsettings*.json
+*.env
 # .NET Core
 bin/
 obj/
