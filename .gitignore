@@ -20,6 +20,12 @@
 # OS files
 Thumbs.db
 .DS_Store
+replacements.txt
+message-replacements.txt
+*.env
+*appsettings*Development*.json
+TestResults/
+*.trx
 
 # Docker overrides
 docker-compose.override.yml
