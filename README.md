@@ -10,7 +10,17 @@
 [![License](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
+## Why This Project Exists
 
+Urban discovery systems usually provide generic results.
+WhatShouldIDo introduces a personalization-first architecture that:
+
+- Learns explicit and implicit user preferences
+- Applies contextual scoring (weather, time, season)
+- Optimizes multi-stop routes
+- Enforces fair usage through quota + subscription control
+- Maintains cost-aware multi-provider orchestration
+---
 ## 📋 Table of Contents
 
 - [Overview](#-overview)
