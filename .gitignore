@@ -35,6 +35,8 @@ docker-compose.override.yml
 /API/src/WhatShouldIDo.API/appsettings.json
 /API/src/WhatShouldIDo.API/appsettings.Development.json
 
+**/appsettings.Development.json
+**/appsettings.Development.*
 *.appsettings*.json
 *.env
 # .NET Core
