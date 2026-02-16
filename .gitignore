@@ -582,6 +582,8 @@ tramp
 *.swp
 *.swo
 *~
+TestResults/
+*.trx
 
 # .NET
 bin/
